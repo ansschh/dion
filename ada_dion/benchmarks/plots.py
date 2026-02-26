@@ -55,8 +55,26 @@ def _setup_style():
         "font.size": 12,
         "axes.grid": True,
         "grid.alpha": 0.3,
+        "grid.linestyle": "--",
         "legend.fontsize": 10,
+        "legend.framealpha": 0.9,
+        "legend.edgecolor": "0.8",
     })
+
+
+def _place_legend(ax, loc="best"):
+    """Place legend outside the grid area if there's risk of overlap."""
+    handles, labels = ax.get_legend_handles_labels()
+    if not handles:
+        return
+    ax.legend(handles, labels, loc=loc, frameon=True, fancybox=False)
+
+
+def _finalize_ax(ax):
+    """Apply common axis formatting: grid behind data, clean spines."""
+    ax.set_axisbelow(True)  # Grid lines behind data
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
 
 
 # ======================================================================
@@ -78,12 +96,14 @@ def plot_val_loss_vs_tokens(
     for opt_name, data in runs.items():
         color = COLORS.get(opt_name, "gray")
         label = LABELS.get(opt_name, opt_name)
-        ax.plot(data["tokens"], data["val_loss"], color=color, label=label, linewidth=2)
+        ax.plot(data["tokens"], data["val_loss"], color=color, label=label,
+                linewidth=2, zorder=3)
 
     ax.set_xlabel("Tokens")
     ax.set_ylabel("Validation Loss")
     ax.set_title("Validation Loss vs Tokens")
-    ax.legend()
+    _finalize_ax(ax)
+    _place_legend(ax, loc="upper right")
     fig.tight_layout()
     return fig
 
@@ -104,12 +124,14 @@ def plot_val_loss_vs_wallclock(
         color = COLORS.get(opt_name, "gray")
         label = LABELS.get(opt_name, opt_name)
         time_h = [t / 3600 for t in data["time_s"]]
-        ax.plot(time_h, data["val_loss"], color=color, label=label, linewidth=2)
+        ax.plot(time_h, data["val_loss"], color=color, label=label,
+                linewidth=2, zorder=3)
 
     ax.set_xlabel("Wall-clock Time (hours)")
     ax.set_ylabel("Validation Loss")
     ax.set_title("Validation Loss vs Wall-clock Time")
-    ax.legend()
+    _finalize_ax(ax)
+    _place_legend(ax, loc="upper right")
     fig.tight_layout()
     return fig
 
@@ -130,12 +152,13 @@ def plot_tokens_per_sec(
         color = COLORS.get(opt_name, "gray")
         label = LABELS.get(opt_name, opt_name)
         ax.plot(data["step"], data["tokens_per_sec"], color=color, label=label,
-                linewidth=1.5, alpha=0.8)
+                linewidth=1.5, alpha=0.8, zorder=3)
 
     ax.set_xlabel("Training Step")
     ax.set_ylabel("Tokens/sec")
     ax.set_title("Throughput Stability")
-    ax.legend()
+    _finalize_ax(ax)
+    _place_legend(ax, loc="lower right")
     fig.tight_layout()
     return fig
 
@@ -156,7 +179,7 @@ def plot_scaling_tokens_per_sec(
         color = COLORS.get(opt_name, "gray")
         label = LABELS.get(opt_name, opt_name)
         ax.plot(data["num_gpus"], data["tokens_per_sec"], "o-",
-                color=color, label=label, linewidth=2, markersize=8)
+                color=color, label=label, linewidth=2, markersize=8, zorder=3)
 
     # Ideal linear scaling reference
     if runs:
@@ -167,12 +190,13 @@ def plot_scaling_tokens_per_sec(
             ideal_gpus = first_run["num_gpus"]
             ideal_tps = [base_tps * (g / base_gpus) for g in ideal_gpus]
             ax.plot(ideal_gpus, ideal_tps, "--", color="gray",
-                    label="Ideal linear", linewidth=1, alpha=0.5)
+                    label="Ideal linear", linewidth=1, alpha=0.5, zorder=2)
 
     ax.set_xlabel("Number of GPUs")
     ax.set_ylabel("Tokens/sec")
     ax.set_title("Scaling Efficiency")
-    ax.legend()
+    _finalize_ax(ax)
+    _place_legend(ax, loc="upper left")
     fig.tight_layout()
     return fig
 
@@ -205,14 +229,17 @@ def plot_step_time_breakdown(
     bottom = np.zeros(len(opt_names))
     for comp, comp_label, comp_color in zip(components, comp_labels, comp_colors):
         values = [runs[opt_name].get(comp, 0) for opt_name in opt_names]
-        ax.bar(x, values, width, bottom=bottom, label=comp_label, color=comp_color)
+        ax.bar(x, values, width, bottom=bottom, label=comp_label,
+               color=comp_color, zorder=3, edgecolor="white", linewidth=0.5)
         bottom += np.array(values)
 
     ax.set_xticks(x)
     ax.set_xticklabels([LABELS.get(n, n) for n in opt_names])
     ax.set_ylabel("Time (ms)")
     ax.set_title("Step Time Breakdown")
-    ax.legend()
+    _finalize_ax(ax)
+    # Legend outside plot for bar charts to avoid covering bars
+    ax.legend(loc="upper left", bbox_to_anchor=(0.0, 1.0))
     fig.tight_layout()
     return fig
 
@@ -242,14 +269,16 @@ def plot_communicated_bytes(
     bottom = np.zeros(len(opt_names))
     for coll, coll_label, coll_color in zip(collectives, coll_labels, coll_colors):
         values = [runs[opt_name].get(coll, 0) / 1e6 for opt_name in opt_names]
-        ax.bar(x, values, width, bottom=bottom, label=coll_label, color=coll_color)
+        ax.bar(x, values, width, bottom=bottom, label=coll_label,
+               color=coll_color, zorder=3, edgecolor="white", linewidth=0.5)
         bottom += np.array(values)
 
     ax.set_xticks(x)
     ax.set_xticklabels([LABELS.get(n, n) for n in opt_names])
     ax.set_ylabel("Communicated (MB/step)")
     ax.set_title("Communication Volume per Step")
-    ax.legend()
+    _finalize_ax(ax)
+    ax.legend(loc="upper left", bbox_to_anchor=(0.0, 1.0))
     fig.tight_layout()
     return fig
 
@@ -277,14 +306,16 @@ def plot_collective_time(
     bottom = np.zeros(len(opt_names))
     for coll, coll_label, coll_color in zip(collectives, coll_labels, coll_colors):
         values = [runs[opt_name].get(coll, 0) for opt_name in opt_names]
-        ax.bar(x, values, width, bottom=bottom, label=coll_label, color=coll_color)
+        ax.bar(x, values, width, bottom=bottom, label=coll_label,
+               color=coll_color, zorder=3, edgecolor="white", linewidth=0.5)
         bottom += np.array(values)
 
     ax.set_xticks(x)
     ax.set_xticklabels([LABELS.get(n, n) for n in opt_names])
     ax.set_ylabel("Time (ms/step)")
     ax.set_title("Collective Time per Step")
-    ax.legend()
+    _finalize_ax(ax)
+    ax.legend(loc="upper left", bbox_to_anchor=(0.0, 1.0))
     fig.tight_layout()
     return fig
 
@@ -305,12 +336,13 @@ def plot_comm_compute_ratio(
         color = COLORS.get(opt_name, "gray")
         label = LABELS.get(opt_name, opt_name)
         ax.plot(data["num_gpus"], data["comm_compute_ratio"], "o-",
-                color=color, label=label, linewidth=2, markersize=8)
+                color=color, label=label, linewidth=2, markersize=8, zorder=3)
 
     ax.set_xlabel("Number of GPUs")
     ax.set_ylabel("Comm / Compute Ratio")
     ax.set_title("Communication Overhead vs Scale")
-    ax.legend()
+    _finalize_ax(ax)
+    _place_legend(ax, loc="upper left")
     fig.tight_layout()
     return fig
 
@@ -333,15 +365,17 @@ def plot_dion_rank_residual(
 
     steps = data["step"]
 
-    ax1.plot(steps, data["rank_mean"], color=COLORS["dion"], linewidth=1.5)
+    ax1.plot(steps, data["rank_mean"], color=COLORS["dion"], linewidth=1.5, zorder=3)
     ax1.set_xlabel("Training Step")
     ax1.set_ylabel("Rank (mean across layers)")
     ax1.set_title("Dion: Effective Rank")
+    _finalize_ax(ax1)
 
-    ax2.plot(steps, data["residual_norm_mean"], color=COLORS["dion"], linewidth=1.5)
+    ax2.plot(steps, data["residual_norm_mean"], color=COLORS["dion"], linewidth=1.5, zorder=3)
     ax2.set_xlabel("Training Step")
     ax2.set_ylabel("||M||_F (mean)")
     ax2.set_title("Dion: Residual Norm (after error feedback)")
+    _finalize_ax(ax2)
 
     fig.tight_layout()
     return fig
@@ -361,18 +395,22 @@ def plot_dion2_alpha_sparsity(
 
     steps = data["step"]
 
-    ax1.plot(steps, data["selected_frac_mean"], color=COLORS["dion2"], linewidth=1.5)
-    ax1.axhline(y=data["alpha"][0] if data["alpha"] else 0.25, color="gray",
-                linestyle="--", alpha=0.5, label="Target alpha")
+    ax1.plot(steps, data["selected_frac_mean"], color=COLORS["dion2"],
+             linewidth=1.5, zorder=3, label="Actual")
+    target_alpha = data["alpha"][0] if data["alpha"] else 0.25
+    ax1.axhline(y=target_alpha, color="gray", linestyle="--", alpha=0.5,
+                label=f"Target ({target_alpha})", zorder=2)
     ax1.set_xlabel("Training Step")
     ax1.set_ylabel("Selected Fraction")
-    ax1.set_title("Dion2: Selected Row Fraction")
-    ax1.legend()
+    ax1.set_title("Dion2: Selected Row/Col Fraction")
+    _finalize_ax(ax1)
+    _place_legend(ax1, loc="upper right")
 
-    ax2.plot(steps, data["sparsity"], color=COLORS["dion2"], linewidth=1.5)
+    ax2.plot(steps, data["sparsity"], color=COLORS["dion2"], linewidth=1.5, zorder=3)
     ax2.set_xlabel("Training Step")
     ax2.set_ylabel("Sparsity (1 - fraction updated)")
     ax2.set_title("Dion2: Update Sparsity")
+    _finalize_ax(ax2)
 
     fig.tight_layout()
     return fig
@@ -386,6 +424,10 @@ def plot_adadion_stub() -> plt.Figure:
             ha="center", va="center", fontsize=16, color="gray",
             transform=ax.transAxes)
     ax.set_title("AdaDion: Effective Rank Estimate vs Chosen r/alpha")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
     fig.tight_layout()
     return fig
 
@@ -419,58 +461,58 @@ def save_all_plots(
         # Core plots
         if all("tokens" in r and "val_loss" in r for r in runs.values()):
             fig = plot_val_loss_vs_tokens(runs)
-            fig.savefig(output_path / "01_val_loss_vs_tokens.png")
+            fig.savefig(output_path / "01_val_loss_vs_tokens.png", bbox_inches="tight")
             plt.close(fig)
 
         if all("time_s" in r and "val_loss" in r for r in runs.values()):
             fig = plot_val_loss_vs_wallclock(runs)
-            fig.savefig(output_path / "02_val_loss_vs_wallclock.png")
+            fig.savefig(output_path / "02_val_loss_vs_wallclock.png", bbox_inches="tight")
             plt.close(fig)
 
         if all("step" in r and "tokens_per_sec" in r for r in runs.values()):
             fig = plot_tokens_per_sec(runs)
-            fig.savefig(output_path / "03_tokens_per_sec.png")
+            fig.savefig(output_path / "03_tokens_per_sec.png", bbox_inches="tight")
             plt.close(fig)
 
         if all("num_gpus" in r and "tokens_per_sec" in r for r in runs.values()):
             fig = plot_scaling_tokens_per_sec(runs)
-            fig.savefig(output_path / "04_scaling.png")
+            fig.savefig(output_path / "04_scaling.png", bbox_inches="tight")
             plt.close(fig)
 
         if all("fwd_ms" in r for r in runs.values()):
             fig = plot_step_time_breakdown(runs)
-            fig.savefig(output_path / "05_step_time_breakdown.png")
+            fig.savefig(output_path / "05_step_time_breakdown.png", bbox_inches="tight")
             plt.close(fig)
 
         if all("allreduce_bytes" in r for r in runs.values()):
             fig = plot_communicated_bytes(runs)
-            fig.savefig(output_path / "06_communicated_bytes.png")
+            fig.savefig(output_path / "06_communicated_bytes.png", bbox_inches="tight")
             plt.close(fig)
 
         if all("allreduce_ms" in r for r in runs.values()):
             fig = plot_collective_time(runs)
-            fig.savefig(output_path / "07_collective_time.png")
+            fig.savefig(output_path / "07_collective_time.png", bbox_inches="tight")
             plt.close(fig)
 
         if all("num_gpus" in r and "comm_compute_ratio" in r for r in runs.values()):
             fig = plot_comm_compute_ratio(runs)
-            fig.savefig(output_path / "08_comm_compute_ratio.png")
+            fig.savefig(output_path / "08_comm_compute_ratio.png", bbox_inches="tight")
             plt.close(fig)
 
     # Optimizer-specific plots
     if dion_data:
         fig = plot_dion_rank_residual(dion_data)
-        fig.savefig(output_path / "09_dion_rank_residual.png")
+        fig.savefig(output_path / "09_dion_rank_residual.png", bbox_inches="tight")
         plt.close(fig)
 
     if dion2_data:
         fig = plot_dion2_alpha_sparsity(dion2_data)
-        fig.savefig(output_path / "10_dion2_alpha_sparsity.png")
+        fig.savefig(output_path / "10_dion2_alpha_sparsity.png", bbox_inches="tight")
         plt.close(fig)
 
     # Stub
     fig = plot_adadion_stub()
-    fig.savefig(output_path / "11_adadion_stub.png")
+    fig.savefig(output_path / "11_adadion_stub.png", bbox_inches="tight")
     plt.close(fig)
 
     print(f"Plots saved to {output_path}")

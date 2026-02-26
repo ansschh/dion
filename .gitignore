@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.pytest_cache/
+.claude/
+*.prof
+*.trace
+wandb/
+runs/
+profiles/
+checkpoints/
