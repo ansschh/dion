@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "ada-dion"
+version = "0.1.0"
+description = "Muon/Dion/Dion2 optimizers integrated with TorchTitan for distributed LLM training benchmarks"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.7.0",
+    "numpy",
+    "matplotlib",
+    "seaborn",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+full = [
+    "wandb",
+    "tensorboard",
+    "datasets",
+    "torchvision",
+]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[tool.setuptools.packages.find]
+include = ["ada_dion*"]
+
+[tool.pytest.ini_options]
+testpaths = ["ada_dion/tests"]
