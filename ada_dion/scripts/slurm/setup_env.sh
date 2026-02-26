@@ -50,7 +50,10 @@ pip install --quiet -e torchtitan/
 # 6. Install ada-dion
 pip install --quiet -e ".[full,dev]"
 
-# 7. Create log/output dirs
+# 7. Patch TorchTitan to register ada_dion experiment module
+bash ada_dion/scripts/patch_torchtitan.sh "$WORK_DIR"
+
+# 8. Create log/output dirs
 mkdir -p logs profiles checkpoints
 
 # 8. Verify
