@@ -35,8 +35,9 @@ module load python/3.11.6-gcc-13.2.0-fh6i4o3 2>/dev/null || true
 module load cuda/12.2.1-gcc-11.3.1-sdqrj2e 2>/dev/null || true
 source "$HOME/envs/adadion/bin/activate"
 
-cd "$HOME/ada-dion"
-mkdir -p logs
+# Work dir: use logs/ subdir to avoid torchtitan/ directory shadowing the installed package
+mkdir -p "$HOME/ada-dion/logs"
+cd "$HOME/ada-dion/logs"
 
 # NCCL
 export NCCL_DEBUG=WARN
