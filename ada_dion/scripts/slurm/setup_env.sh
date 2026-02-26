@@ -39,9 +39,10 @@ fi
 source "$VENV_DIR/bin/activate"
 echo "Using python: $(which python3)"
 
-# 4. Install PyTorch with CUDA 12.1 (closest to cluster's 12.2)
+# 4. Install PyTorch with CUDA 12.6 wheels (compatible with cluster's 12.2 driver)
+# cu126 wheels require CUDA driver >=12.x and provide PyTorch 2.7+ (needed by TorchTitan)
 pip install --quiet --upgrade pip
-pip install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cu126
 
 # 5. Install TorchTitan
 pip install --quiet -e torchtitan/
