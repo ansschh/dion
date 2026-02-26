@@ -1,56 +1,47 @@
 #!/bin/bash
 # ============================================================
-# One-time setup on Caltech HPC: clone repo, create conda env, install deps.
-# Run this from the login node ONCE.
-#
-# Usage: bash setup_env.sh
+# One-time setup on Caltech HPC (Resnick cluster)
+# Run from login node: bash setup_env.sh
 # ============================================================
 
 set -e
 
-# ------ CONFIG (edit these) ------
-WORK_DIR="${SCRATCH:-$HOME}/ada-dion"
-CONDA_ENV_NAME="adadion"
 REPO_URL="https://github.com/ansschh/dion.git"
-# ---------------------------------
+
+# Use home since no scratch env var is set
+WORK_DIR="$HOME/ada-dion"
+VENV_DIR="$HOME/envs/adadion"
 
 echo "=== ada-dion Caltech HPC Setup ==="
 echo "Work dir: $WORK_DIR"
-echo "Conda env: $CONDA_ENV_NAME"
+echo "Venv: $VENV_DIR"
 
-# 1. Load modules (uncomment/edit as needed for your cluster)
-# module load cuda/12.4
-# module load anaconda3
-# module load python/3.11
+# 1. Load modules
+module load python/3.11.6-gcc-13.2.0-fh6i4o3
+module load cuda/12.2.1-gcc-11.3.1-sdqrj2e
+echo "Loaded python 3.11.6 + cuda 12.2.1"
 
 # 2. Clone repo
 if [ ! -d "$WORK_DIR" ]; then
     echo "Cloning repo..."
     git clone --recurse-submodules "$REPO_URL" "$WORK_DIR"
 else
-    echo "Repo already exists at $WORK_DIR, pulling latest..."
+    echo "Repo exists, pulling latest..."
     cd "$WORK_DIR" && git pull && git submodule update --init --recursive
 fi
 cd "$WORK_DIR"
 
-# 3. Create conda environment (if conda is available)
-if command -v conda &>/dev/null; then
-    if ! conda env list | grep -q "$CONDA_ENV_NAME"; then
-        echo "Creating conda env: $CONDA_ENV_NAME"
-        conda create -n "$CONDA_ENV_NAME" python=3.11 -y
-    fi
-    echo "Activating conda env..."
-    eval "$(conda shell.bash hook)"
-    conda activate "$CONDA_ENV_NAME"
-else
-    echo "WARNING: conda not found. Using system python."
-    echo "You may need to: module load anaconda3"
+# 3. Create venv
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating venv..."
+    python3 -m venv "$VENV_DIR"
 fi
+source "$VENV_DIR/bin/activate"
+echo "Using python: $(which python3)"
 
-# 4. Install PyTorch with CUDA
+# 4. Install PyTorch with CUDA 12.1 (closest to cluster's 12.2)
 pip install --quiet --upgrade pip
-pip install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cu124 2>/dev/null || \
-    pip install --quiet torch torchvision
+pip install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
 # 5. Install TorchTitan
 pip install --quiet -e torchtitan/
@@ -58,17 +49,25 @@ pip install --quiet -e torchtitan/
 # 6. Install ada-dion
 pip install --quiet -e ".[full,dev]"
 
-# 7. Verify
-python -c "
+# 7. Create log/output dirs
+mkdir -p logs profiles checkpoints
+
+# 8. Verify
+python3 -c "
 import torch
 import ada_dion
 print(f'PyTorch {torch.__version__}')
 print(f'CUDA available: {torch.cuda.is_available()}')
+print(f'CUDA version: {torch.version.cuda}')
 print(f'ada-dion {ada_dion.__version__}')
 print('Setup OK!')
 "
 
 echo ""
 echo "=== Setup complete ==="
-echo "Activate with: conda activate $CONDA_ENV_NAME"
-echo "Submit jobs from: $WORK_DIR"
+echo ""
+echo "To use in future sessions, run:"
+echo "  module load python/3.11.6-gcc-13.2.0-fh6i4o3"
+echo "  module load cuda/12.2.1-gcc-11.3.1-sdqrj2e"
+echo "  source $VENV_DIR/bin/activate"
+echo "  cd $WORK_DIR"

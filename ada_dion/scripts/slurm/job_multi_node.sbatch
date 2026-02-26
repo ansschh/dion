@@ -1,92 +1,74 @@
 #!/bin/bash
 # ============================================================
-# SLURM: Multi-node training (HSDP: shard within node, replicate across)
+# SLURM: Multi-node HSDP on Caltech HPC (N nodes x 4x H200)
 #
 # Usage:
-#   sbatch job_multi_node.sbatch muon         # 2 nodes
-#   NNODES=4 sbatch job_multi_node.sbatch dion  # 4 nodes
+#   sbatch job_multi_node.sbatch muon              # 2 nodes = 8 GPUs
+#   sbatch --nodes=4 job_multi_node.sbatch dion    # 4 nodes = 16 GPUs
 # ============================================================
 
-# ------ SLURM CONFIG (edit for your cluster) ------
 #SBATCH --job-name=adadion-multi
-#SBATCH --partition=gpu                # <-- CHANGE to your GPU partition
-#SBATCH --nodes=2                      # <-- CHANGE: 2 or 4 nodes
+#SBATCH --partition=gpu
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus-per-node=4             # <-- CHANGE to GPUs per node (4 or 8)
+#SBATCH --gres=gpu:nvidia_h200:4
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=256G
+#SBATCH --mem=128G
 #SBATCH --time=12:00:00
 #SBATCH --output=logs/%j_%x.out
 #SBATCH --error=logs/%j_%x.err
-# ---------------------------------------------------
 
 set -e
 
 OPTIMIZER=${1:-muon}
 STEPS=${STEPS:-10000}
-NGPU_PER_NODE=${SLURM_GPUS_PER_NODE:-4}
-NNODES=${SLURM_NNODES:-2}
+NGPU_PER_NODE=4
+NNODES=$SLURM_NNODES
 WORLD_SIZE=$(( NNODES * NGPU_PER_NODE ))
 
-echo "============================================"
-echo "  Multi-node Job: $SLURM_JOB_ID"
-echo "  Nodes: $NNODES ($SLURM_NODELIST)"
-echo "  GPUs/node: $NGPU_PER_NODE"
-echo "  World size: $WORLD_SIZE"
-echo "  Optimizer: $OPTIMIZER"
-echo "  Steps: $STEPS"
-echo "============================================"
+# HSDP: shard within node, replicate across nodes
+DP_SHARD=$NGPU_PER_NODE
+DP_REPLICATE=$NNODES
 
-# ------ Environment setup ------
-# Uncomment/edit for your cluster:
-# module load cuda/12.4
-# module load anaconda3
-# eval "$(conda shell.bash hook)"
-# conda activate adadion
-
-# ------ Work directory ------
-WORK_DIR="${SCRATCH:-$HOME}/ada-dion"
-cd "$WORK_DIR"
-
-# ------ NCCL / distributed settings ------
-export NCCL_DEBUG=WARN
-export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
-
-# Get master address from first node in allocation
 MASTER_ADDR=$(scontrol show hostnames "$SLURM_NODELIST" | head -n 1)
 MASTER_PORT=$(( 29500 + SLURM_JOB_ID % 1000 ))
 
-export MASTER_ADDR
-export MASTER_PORT
+echo "============================================"
+echo "  Multi-node: $SLURM_JOB_ID"
+echo "  Nodes: $NNODES ($SLURM_NODELIST)"
+echo "  World size: $WORLD_SIZE GPUs"
+echo "  HSDP: shard=$DP_SHARD, replicate=$DP_REPLICATE"
+echo "  Master: $MASTER_ADDR:$MASTER_PORT"
+echo "  Optimizer: $OPTIMIZER | Steps: $STEPS"
+echo "============================================"
 
-# W&B
+# Environment
+module load python/3.11.6-gcc-13.2.0-fh6i4o3
+module load cuda/12.2.1-gcc-11.3.1-sdqrj2e
+source "$HOME/envs/adadion/bin/activate"
+
+cd "$HOME/ada-dion"
+mkdir -p logs
+
+export NCCL_DEBUG=WARN
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+export MASTER_ADDR MASTER_PORT
 export WANDB_PROJECT="${WANDB_PROJECT:-ada-dion-caltech}"
 export WANDB_RUN_NAME="${OPTIMIZER}_${WORLD_SIZE}gpu_hsdp_${SLURM_JOB_ID}"
 
-mkdir -p logs profiles
-
-# ------ Map optimizer to config ------
 case "$OPTIMIZER" in
     adamw) CONFIG_FN="llama3_160m_adamw" ;;
     muon)  CONFIG_FN="llama3_160m_muon" ;;
     dion)  CONFIG_FN="llama3_160m_dion" ;;
     dion2) CONFIG_FN="llama3_160m_dion2" ;;
-    *)
-        echo "Unknown optimizer: $OPTIMIZER"
-        exit 1
-        ;;
+    *)     echo "Unknown: $OPTIMIZER"; exit 1 ;;
 esac
 
-# ------ HSDP config: shard within node, replicate across nodes ------
-DP_SHARD=$NGPU_PER_NODE
-DP_REPLICATE=$NNODES
+srun --kill-on-bad-exit=1 bash -c "
+    module load python/3.11.6-gcc-13.2.0-fh6i4o3
+    module load cuda/12.2.1-gcc-11.3.1-sdqrj2e
+    source $HOME/envs/adadion/bin/activate
 
-echo "Parallelism: dp_shard=$DP_SHARD, dp_replicate=$DP_REPLICATE"
-echo "Master: $MASTER_ADDR:$MASTER_PORT"
-
-# ------ Launch with srun (SLURM's MPI-like launcher) ------
-# srun launches one task per node, torchrun spawns GPU workers per node
-srun --kill-on-bad-exit=1 \
     torchrun \
         --nproc_per_node=$NGPU_PER_NODE \
         --nnodes=$NNODES \
@@ -94,13 +76,14 @@ srun --kill-on-bad-exit=1 \
         --master_addr=$MASTER_ADDR \
         --master_port=$MASTER_PORT \
         --rdzv_backend=c10d \
-        --rdzv_endpoint="$MASTER_ADDR:$MASTER_PORT" \
+        --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \
         -m torchtitan.train \
         --module ada_dion.integration.config_registry \
-        --config "$CONFIG_FN" \
-        --training.steps "$STEPS" \
-        --parallelism.data_parallel_shard_degree "$DP_SHARD" \
-        --parallelism.data_parallel_replicate_degree "$DP_REPLICATE" \
+        --config $CONFIG_FN \
+        --training.steps $STEPS \
+        --parallelism.data_parallel_shard_degree $DP_SHARD \
+        --parallelism.data_parallel_replicate_degree $DP_REPLICATE \
         --parallelism.tensor_parallel_degree 1
+"
 
-echo "Multi-node job $SLURM_JOB_ID finished at $(date)"
+echo "Done at $(date)"

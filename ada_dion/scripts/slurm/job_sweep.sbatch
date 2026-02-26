@@ -1,48 +1,41 @@
 #!/bin/bash
 # ============================================================
-# SLURM: Hyperparameter sweep using SLURM job arrays.
-# Launches 24 runs (one per array task) on single nodes.
+# SLURM: HP sweep via job array (24 configs, 1 node x 4 H200 each)
 #
 # Usage:
 #   sbatch job_sweep.sbatch
 # ============================================================
 
-# ------ SLURM CONFIG ------
 #SBATCH --job-name=adadion-sweep
-#SBATCH --partition=gpu                # <-- CHANGE
+#SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus-per-node=4             # <-- CHANGE
+#SBATCH --gres=gpu:nvidia_h200:4
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=256G
+#SBATCH --mem=128G
 #SBATCH --time=6:00:00
-#SBATCH --array=0-23                   # 24 sweep configs
+#SBATCH --array=0-23
 #SBATCH --output=logs/sweep_%A_%a.out
 #SBATCH --error=logs/sweep_%A_%a.err
-# --------------------------
 
 set -e
 
-# Uncomment for your cluster:
-# module load cuda/12.4
-# module load anaconda3
-# eval "$(conda shell.bash hook)"
-# conda activate adadion
+# Environment
+module load python/3.11.6-gcc-13.2.0-fh6i4o3
+module load cuda/12.2.1-gcc-11.3.1-sdqrj2e
+source "$HOME/envs/adadion/bin/activate"
 
-WORK_DIR="${SCRATCH:-$HOME}/ada-dion"
-cd "$WORK_DIR"
+cd "$HOME/ada-dion"
+mkdir -p logs
 
-NGPU=${SLURM_GPUS_PER_NODE:-4}
+NGPU=4
 STEPS=5000
 MASTER_PORT=$(( 29500 + SLURM_ARRAY_TASK_ID ))
 
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 export WANDB_PROJECT="${WANDB_PROJECT:-ada-dion-sweep}"
 
-mkdir -p logs
-
-# ------ Sweep grid (24 configs) ------
-# Index: optimizer, config_fn, extra_args
+# 24 sweep configs
 SWEEP_CONFIGS=(
     # AdamW: 3 LRs
     "adamw llama3_160m_adamw --optimizer.lr 1e-4"
@@ -74,18 +67,12 @@ SWEEP_CONFIGS=(
     "dion2 llama3_160m_dion2 --optimizer.lr 0.05 --optimizer.alpha 0.5"
 )
 
-# Get this task's config
 CONFIG_LINE="${SWEEP_CONFIGS[$SLURM_ARRAY_TASK_ID]}"
 read -r OPT_NAME CONFIG_FN EXTRA_ARGS <<< "$CONFIG_LINE"
 
 export WANDB_RUN_NAME="sweep_${OPT_NAME}_task${SLURM_ARRAY_TASK_ID}"
 
-echo "============================================"
-echo "  Sweep task $SLURM_ARRAY_TASK_ID / 23"
-echo "  Optimizer: $OPT_NAME"
-echo "  Config: $CONFIG_FN"
-echo "  Extra: $EXTRA_ARGS"
-echo "============================================"
+echo "Sweep $SLURM_ARRAY_TASK_ID/23: $OPT_NAME | $EXTRA_ARGS"
 
 torchrun \
     --nproc_per_node=$NGPU \
@@ -96,9 +83,9 @@ torchrun \
     --module ada_dion.integration.config_registry \
     --config "$CONFIG_FN" \
     --training.steps "$STEPS" \
-    --parallelism.data_parallel_shard_degree "$NGPU" \
+    --parallelism.data_parallel_shard_degree $NGPU \
     --parallelism.data_parallel_replicate_degree 1 \
     --parallelism.tensor_parallel_degree 1 \
     $EXTRA_ARGS
 
-echo "Sweep task $SLURM_ARRAY_TASK_ID finished at $(date)"
+echo "Sweep task $SLURM_ARRAY_TASK_ID done at $(date)"
