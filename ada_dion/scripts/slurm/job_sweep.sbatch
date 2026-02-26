@@ -81,7 +81,7 @@ torchrun \
     --rdzv_backend=c10d \
     --rdzv_endpoint="localhost:$MASTER_PORT" \
     -m torchtitan.train \
-    --module ada_dion.integration.config_registry \
+    --module ada_dion \
     --config "$CONFIG_FN" \
     --training.steps "$STEPS" \
     --parallelism.data_parallel_shard_degree $NGPU \

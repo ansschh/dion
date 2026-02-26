@@ -80,7 +80,7 @@ srun --kill-on-bad-exit=1 bash -c "
         --rdzv_backend=c10d \
         --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \
         -m torchtitan.train \
-        --module ada_dion.integration.config_registry \
+        --module ada_dion \
         --config $CONFIG_FN \
         --training.steps $STEPS \
         --parallelism.data_parallel_shard_degree $DP_SHARD \
