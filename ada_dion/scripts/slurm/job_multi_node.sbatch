@@ -26,7 +26,6 @@ NGPU_PER_NODE=4
 NNODES=$SLURM_NNODES
 WORLD_SIZE=$(( NNODES * NGPU_PER_NODE ))
 
-# HSDP: shard within node, replicate across nodes
 DP_SHARD=$NGPU_PER_NODE
 DP_REPLICATE=$NNODES
 
@@ -42,17 +41,8 @@ echo "  Master: $MASTER_ADDR:$MASTER_PORT"
 echo "  Optimizer: $OPTIMIZER | Steps: $STEPS"
 echo "============================================"
 
-# Environment (module load may fail on some compute nodes, venv has everything)
-module load python/3.11.6-gcc-13.2.0-fh6i4o3 2>/dev/null || true
-module load cuda/12.2.1-gcc-11.3.1-sdqrj2e 2>/dev/null || true
-source "$HOME/envs/adadion/bin/activate"
+source /resnick/home/atiwari2/ada-dion/ada_dion/scripts/slurm/env.sh
 
-# Work dir: use logs/ subdir to avoid torchtitan/ directory shadowing the installed package
-mkdir -p "$HOME/ada-dion/logs"
-cd "$HOME/ada-dion/logs"
-
-export NCCL_DEBUG=WARN
-export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 export MASTER_ADDR MASTER_PORT
 export WANDB_PROJECT="${WANDB_PROJECT:-ada-dion-caltech}"
 export WANDB_RUN_NAME="${OPTIMIZER}_${WORLD_SIZE}gpu_hsdp_${SLURM_JOB_ID}"
@@ -65,11 +55,14 @@ case "$OPTIMIZER" in
     *)     echo "Unknown: $OPTIMIZER"; exit 1 ;;
 esac
 
+REPO=/resnick/home/atiwari2/ada-dion
+VENV=/resnick/home/atiwari2/envs/adadion
+
 srun --kill-on-bad-exit=1 bash -c "
-    module load python/3.11.6-gcc-13.2.0-fh6i4o3 2>/dev/null || true
-    module load cuda/12.2.1-gcc-11.3.1-sdqrj2e 2>/dev/null || true
-    source $HOME/envs/adadion/bin/activate
-    cd $HOME/ada-dion/logs
+    source $VENV/bin/activate
+    SITE_PKGS=\$(python3 -c \"import site; print(site.getsitepackages()[0])\")
+    export PYTHONPATH=\"\$SITE_PKGS:\$PYTHONPATH\"
+    cd $REPO/torchtitan
 
     torchrun \
         --nproc_per_node=$NGPU_PER_NODE \

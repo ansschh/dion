@@ -20,14 +20,7 @@
 
 set -e
 
-# Environment (module load may fail on some compute nodes, venv has everything)
-module load python/3.11.6-gcc-13.2.0-fh6i4o3 2>/dev/null || true
-module load cuda/12.2.1-gcc-11.3.1-sdqrj2e 2>/dev/null || true
-source "$HOME/envs/adadion/bin/activate"
-
-# Work dir: use logs/ subdir to avoid torchtitan/ directory shadowing the installed package
-mkdir -p "$HOME/ada-dion/logs"
-cd "$HOME/ada-dion/logs"
+source /resnick/home/atiwari2/ada-dion/ada_dion/scripts/slurm/env.sh
 
 NGPU=4
 STEPS=5000

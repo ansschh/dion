@@ -30,25 +30,12 @@ echo "  Job: $SLURM_JOB_ID on $(hostname)"
 echo "  Optimizer: $OPTIMIZER | GPUs: $NGPU | Steps: $STEPS"
 echo "============================================"
 
-# Environment (module load may fail on some compute nodes, venv has everything)
-module load python/3.11.6-gcc-13.2.0-fh6i4o3 2>/dev/null || true
-module load cuda/12.2.1-gcc-11.3.1-sdqrj2e 2>/dev/null || true
-source "$HOME/envs/adadion/bin/activate"
+source /resnick/home/atiwari2/ada-dion/ada_dion/scripts/slurm/env.sh
 
-# Work dir: use logs/ subdir to avoid torchtitan/ directory shadowing the installed package
-mkdir -p "$HOME/ada-dion/logs"
-cd "$HOME/ada-dion/logs"
-
-# NCCL
-export NCCL_DEBUG=WARN
-export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 export MASTER_PORT=$(( 29500 + SLURM_JOB_ID % 1000 ))
-
-# W&B (optional)
 export WANDB_PROJECT="${WANDB_PROJECT:-ada-dion-caltech}"
 export WANDB_RUN_NAME="${OPTIMIZER}_${NGPU}gpu_${STEPS}steps_${SLURM_JOB_ID}"
 
-# Map optimizer to config
 case "$OPTIMIZER" in
     adamw) CONFIG_FN="llama3_160m_adamw" ;;
     muon)  CONFIG_FN="llama3_160m_muon" ;;
