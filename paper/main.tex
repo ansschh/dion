@@ -1,0 +1,217 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{subcaption}
+\usepackage{float}
+
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, citecolor=green!50!black, urlcolor=blue!70!black}
+
+\title{Spectral Optimizers for Distributed LLM Training:\\
+Progress Report on Muon, Dion, and Dion2 Benchmarking}
+\author{Ansh Tiwari}
+\date{February 2026}
+
+\begin{document}
+\maketitle
+
+% ─────────────────────────────────────────────────────────────────
+\section{Overview}
+
+This report summarizes initial benchmarking results comparing four optimizers for distributed LLM pre-training:
+\textbf{AdamW} (baseline), \textbf{Muon} (Newton-Schulz orthonormalization), \textbf{Dion} (low-rank subspace iteration with error feedback), and \textbf{Dion2} ($\alpha$-fraction row selection with selective decay).
+
+All experiments were conducted on the Caltech Resnick HPC cluster using NVIDIA H200 GPUs (140\,GiB HBM3e each) with PyTorch 2.10 and TorchTitan 0.2.2 as the distributed training framework.
+
+The goal is to characterize convergence, throughput, memory footprint, and scaling behavior of spectral optimizers vs.\ standard AdamW at the 160M parameter scale, establishing baselines for the eventual Ada-Dion adaptive optimizer.
+
+% ─────────────────────────────────────────────────────────────────
+\section{Experimental Setup}
+
+\subsection{Model}
+We use a LLaMA-3-style transformer with 160M parameters:
+\begin{itemize}
+    \item $d_{\text{model}} = 768$, $n_{\text{layers}} = 12$, $n_{\text{heads}} = 12$, $n_{\text{kv\_heads}} = 4$
+    \item Hidden dim (FFN) = 2048, vocabulary = 128,256 tokens
+    \item RoPE positional encoding, RMSNorm, SwiGLU activations
+    \item Sequence length = 2048, local batch size = 8
+\end{itemize}
+
+\subsection{Infrastructure}
+\begin{itemize}
+    \item \textbf{Hardware:} Caltech Resnick HPC --- 18 nodes $\times$ 4 NVIDIA H200 (140\,GiB)
+    \item \textbf{Software:} PyTorch 2.10.0+cu126, TorchTitan 0.2.2, FSDP2
+    \item \textbf{Single-node:} 4 GPUs, FSDP (dp\_shard=4, dp\_replicate=1)
+    \item \textbf{Multi-node:} 8 GPUs (2 nodes), HSDP (dp\_shard=4, dp\_replicate=2)
+    \item \textbf{Dataset:} C4 (test subset), BPE tokenizer
+    \item \textbf{Precision:} bfloat16 via FSDP2 mixed precision
+\end{itemize}
+
+\subsection{Optimizers}
+All optimizers use a hybrid setup: a \emph{matrix optimizer} for 2D weight matrices in attention and FFN layers, and standard AdamW (lr=$3\times10^{-4}$, $\beta_1=0.9$, $\beta_2=0.95$, wd=$0.01$) for embeddings, output head, and normalization parameters.
+
+\begin{itemize}
+    \item \textbf{AdamW:} Standard baseline. Applied uniformly to all parameters.
+    \item \textbf{Muon:} Applies Newton-Schulz iteration (5 steps, quintic polynomials) to the momentum buffer at every step, producing an approximately orthonormal update. Momentum $\mu = 0.95$.
+    \item \textbf{Dion:} Maintains a low-rank subspace via power iteration. Projects the momentum-corrected gradient onto a rank-$r$ basis ($r = \lfloor \text{rank\_frac} \times \min(m,n) \rfloor$) using QR decomposition. Error feedback carries the residual forward. Communication cost scales as $O((m+n) \cdot r)$ instead of $O(m \cdot n)$.
+    \item \textbf{Dion2:} Selects an $\alpha$-fraction of rows by L1 norm from the momentum buffer, applies Newton-Schulz orthonormalization to the selected submatrix, and applies \emph{selective decay} (only decaying selected rows). Produces sparse updates.
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────
+\section{Hyperparameter Sweep}
+
+We swept learning rates and optimizer-specific parameters across 24 configurations (5,000 steps each):
+
+\begin{table}[H]
+\centering
+\caption{Hyperparameter sweep configurations and final training loss.}
+\label{tab:sweep}
+\begin{tabular}{llccc}
+\toprule
+\textbf{Optimizer} & \textbf{LR} & \textbf{rank\_frac / $\alpha$} & \textbf{Final Loss} & \textbf{Status} \\
+\midrule
+AdamW   & $1\times10^{-4}$ & ---   & 1.010 & Under-trained \\
+AdamW   & $3\times10^{-4}$ & ---   & 0.023 & Good \\
+\rowcolor{green!10}
+AdamW   & $1\times10^{-3}$ & ---   & \textbf{0.017} & Best \\
+\midrule
+\rowcolor{green!10}
+Muon    & 0.005  & --- & \textbf{0.022} & Best \\
+Muon    & 0.02   & --- & 0.026 & Good \\
+Muon    & 0.05   & --- & 1.470 & Diverged \\
+\midrule
+Dion    & 0.005  & 0.1  & 0.126 & \\
+Dion    & 0.005  & 0.25 & 0.030 & \\
+\rowcolor{green!10}
+Dion    & 0.005  & 0.5  & \textbf{0.024} & Best \\
+Dion    & 0.02   & 0.1  & 1.889 & Diverged \\
+Dion    & 0.02   & 0.25 & 1.185 & Diverged \\
+Dion    & 0.02   & 0.5  & 0.393 & \\
+\midrule
+Dion2   & 0.005  & 0.1  & 0.433 & \\
+Dion2   & 0.005  & 0.25 & 0.035 & \\
+\rowcolor{green!10}
+Dion2   & 0.005  & 0.5  & \textbf{0.024} & Best \\
+Dion2   & 0.02   & 0.1  & 1.661 & Diverged \\
+Dion2   & 0.02   & 0.25 & 0.821 & \\
+Dion2   & 0.02   & 0.5  & 0.280 & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textbf{Key findings:}
+\begin{enumerate}
+    \item Dion and Dion2 are \emph{highly sensitive to learning rate}. The default lr=0.02 (used in the original papers at smaller scale) diverges at 160M. \textbf{lr=0.005} is optimal for both.
+    \item Higher rank fraction / alpha (\textbf{0.5}) consistently outperforms lower values. The low-rank approximation needs sufficient capacity at this scale.
+    \item At optimal HPs, all four optimizers converge to similar final loss ($\sim$0.02), suggesting the optimizers are comparably effective when properly tuned.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────
+\section{Single-Node Results (4$\times$ H200)}
+
+\begin{table}[H]
+\centering
+\caption{Single-node baseline results (10,000 steps, default hyperparameters).}
+\label{tab:single}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Optimizer} & \textbf{Final Loss} & \textbf{Tokens/sec} & \textbf{MFU (\%)} & \textbf{Peak Mem (GiB)} & \textbf{Time (min)} \\
+\midrule
+AdamW & 0.014 & 179,691 & 23.1 & 31.2 & $\sim$18 \\
+Muon  & 0.022 & 123,069 & 15.8 & 35.0 & $\sim$25 \\
+Dion  & 0.608 & 114,901 & 14.8 & 35.0 & $\sim$29 \\
+Dion2 & 0.310 & 119,244 & 15.3 & 35.0 & $\sim$28 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Note: Dion and Dion2 used default lr=0.02 here, which is suboptimal (see Section 3). AdamW's faster per-step throughput ($\sim$180k vs.\ $\sim$115--123k tokens/sec) is expected: the spectral optimizers perform additional computation (Newton-Schulz iterations, QR decomposition) in the optimizer step.
+
+The spectral optimizers use $\sim$4\,GiB more memory per GPU (35 vs.\ 31\,GiB) due to additional state buffers (momentum matrices, orthonormal bases). This is a modest overhead given the 140\,GiB H200 capacity.
+
+% ─────────────────────────────────────────────────────────────────
+\section{Multi-Node HSDP Results (8 GPU)}
+
+\begin{table}[H]
+\centering
+\caption{Multi-node HSDP results (2 nodes $\times$ 4 H200, 10,000 steps, default HPs).}
+\label{tab:multi}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Optimizer} & \textbf{Final Loss} & \textbf{Tokens/sec} & \textbf{MFU (\%)} & \textbf{Improvement over 4-GPU} \\
+\midrule
+AdamW & 0.011 & 169,756 & 21.8 & $0.014 \to 0.011$ (1.3$\times$) \\
+Muon  & 0.015 & 116,258 & 14.9 & $0.022 \to 0.015$ (1.5$\times$) \\
+Dion  & 0.023 & 109,183 & 14.0 & $0.608 \to 0.023$ (\textbf{26$\times$}) \\
+Dion2 & 0.027 & 113,684 & 14.6 & $0.310 \to 0.027$ (\textbf{11$\times$}) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textbf{The most striking finding}: Dion's loss improves by \textbf{26$\times$} when moving from single-node FSDP to multi-node HSDP (dp\_shard=4, dp\_replicate=2). Dion2 shows a similar 11$\times$ improvement.
+
+The HSDP configuration averages gradients across 2 replica groups before the optimizer step. This cross-replica gradient averaging provides a noise-reduced gradient estimate that dramatically improves the quality of Dion's low-rank subspace approximation. In the single-node case, the gradient noise from a single replica is too high for the low-rank projection to capture the signal effectively at lr=0.02.
+
+This suggests that \textbf{Dion is particularly well-suited for multi-node training}, where gradient replication naturally provides the denoising that the low-rank approximation requires.
+
+\subsection{Throughput and Scaling}
+Per-GPU throughput decreases slightly when going from 4 to 8 GPUs (e.g., AdamW: 180k $\to$ 170k tokens/sec) due to inter-node communication overhead. The 160M model is too small to fully utilize 8 GPUs --- the communication-to-computation ratio is unfavorable at this scale. Larger models (1B+) would show better scaling efficiency.
+
+% ─────────────────────────────────────────────────────────────────
+\section{Figures}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/fig1_main_grid_default.png}
+    \caption{Training metrics over 10,000 steps with default hyperparameters on 4$\times$ H200. Top row: training loss (log and linear zoom), gradient norm. Bottom row: throughput, MFU, GPU memory.}
+    \label{fig:main_grid}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/fig5_sweep_heatmaps.png}
+    \caption{Hyperparameter sweep results as heatmaps. Green = low loss (good), red = high loss (diverged). Both Dion and Dion2 strongly prefer lr=0.005 and high rank/alpha fraction.}
+    \label{fig:sweep}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/fig6_scaling_comparison.png}
+    \caption{Left: Final loss comparison between FSDP (4 GPU) and HSDP (8 GPU). Dion benefits enormously from HSDP. Right: Throughput comparison showing modest overhead from inter-node communication.}
+    \label{fig:scaling}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/fig7_main_grid_multinode.png}
+    \caption{Training metrics for multi-node HSDP (8 GPU). With gradient replication, all optimizers converge effectively.}
+    \label{fig:multi_grid}
+\end{figure}
+
+% ─────────────────────────────────────────────────────────────────
+\section{Discussion and Next Steps}
+
+\subsection{Summary of Findings}
+\begin{enumerate}
+    \item \textbf{All optimizers converge comparably at optimal HPs.} The final loss at 5k steps is $\sim$0.02 for all four optimizers when properly tuned.
+    \item \textbf{Spectral optimizers need lower learning rates at scale.} lr=0.005 vs.\ the 0.02 used in smaller-scale experiments.
+    \item \textbf{Dion benefits dramatically from HSDP.} The 26$\times$ improvement with gradient replication is the most significant result. This motivates designing communication-efficient optimizers specifically for the HSDP regime.
+    \item \textbf{Throughput overhead is moderate.} Spectral optimizers are $\sim$35\% slower per step than AdamW, but may compensate by converging in fewer steps on harder tasks.
+    \item \textbf{Memory overhead is modest.} $\sim$4\,GiB extra per GPU, negligible on H200.
+\end{enumerate}
+
+\subsection{Next Steps}
+\begin{enumerate}
+    \item \textbf{Re-run baselines with optimal HPs} from the sweep (lr=0.005 for Muon/Dion/Dion2, lr=1e-3 for AdamW) to get a fair head-to-head comparison.
+    \item \textbf{Scale to larger models} (1B+ parameters) where communication overhead becomes the bottleneck and Dion's low-rank communication advantage is more pronounced.
+    \item \textbf{Implement Ada-Dion}: Adaptive rank selection based on effective rank (erank) of projection coefficients, with quality control via approximation error monitoring --- as prototyped in the FashionMNIST experiments.
+    \item \textbf{Profile NCCL communication} to get actual bytes/step and time/step breakdown per collective (all-reduce, all-gather, reduce-scatter).
+    \item \textbf{Run on real C4 dataset} (not the small test subset) for meaningful perplexity numbers.
+    \item \textbf{Multi-seed runs} (3+ seeds) for error bars and statistical significance.
+\end{enumerate}
+
+\end{document}
