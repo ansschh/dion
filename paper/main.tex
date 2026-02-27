@@ -5,9 +5,18 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{hyperref}
-\usepackage{xcolor}
+\usepackage[table]{xcolor}
 \usepackage{subcaption}
 \usepackage{float}
+\usepackage{grffile}
+
+% Allow compilation without figure files
+\let\OrigIncludegraphics\includegraphics
+\renewcommand{\includegraphics}[2][]{%
+  \IfFileExists{#2}{\OrigIncludegraphics[#1]{#2}}{%
+    \fbox{\parbox{0.8\textwidth}{\centering\vspace{2em}\textit{Figure not yet generated:}\\[0.5em]\texttt{#2}\vspace{2em}}}%
+  }%
+}
 
 \hypersetup{colorlinks=true, linkcolor=blue!60!black, citecolor=green!50!black, urlcolor=blue!70!black}
 
@@ -111,7 +120,7 @@ Dion2   & 0.02   & 0.5  & 0.280 & \\
 \end{enumerate}
 
 % ─────────────────────────────────────────────────────────────────
-\section{Single-Node Results (4$\times$ H200)}
+\section{Single-Node Results (4 x H200)}
 
 \begin{table}[H]
 \centering
@@ -166,29 +175,29 @@ Per-GPU throughput decreases slightly when going from 4 to 8 GPUs (e.g., AdamW: 
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{figures/fig1_main_grid_default.png}
-    \caption{Training metrics over 10,000 steps with default hyperparameters on 4$\times$ H200. Top row: training loss (log and linear zoom), gradient norm. Bottom row: throughput, MFU, GPU memory.}
-    \label{fig:main_grid}
+    \includegraphics[width=0.85\textwidth]{figures/fig3_loss_vs_tokens.png}
+    \caption{Training loss vs.\ tokens consumed (single-node, 4 GPUs, default HPs, 10k steps). AdamW converges fastest, followed by Muon. Dion and Dion2 converge more slowly at their default lr=0.02.}
+    \label{fig:loss_tokens}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{figures/fig5_sweep_heatmaps.png}
-    \caption{Hyperparameter sweep results as heatmaps. Green = low loss (good), red = high loss (diverged). Both Dion and Dion2 strongly prefer lr=0.005 and high rank/alpha fraction.}
+    \includegraphics[width=0.85\textwidth]{figures/fig5_sweep_heatmaps.png}
+    \caption{Hyperparameter sweep results (24 configurations, 5k steps each). Clear pattern: lr=0.005 with high rank\_frac/alpha is optimal for both Dion and Dion2.}
     \label{fig:sweep}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{figures/fig6_scaling_comparison.png}
-    \caption{Left: Final loss comparison between FSDP (4 GPU) and HSDP (8 GPU). Dion benefits enormously from HSDP. Right: Throughput comparison showing modest overhead from inter-node communication.}
+    \includegraphics[width=0.85\textwidth]{figures/fig6_scaling_comparison.png}
+    \caption{Final loss comparison between single-node FSDP (4 GPU) and multi-node HSDP (8 GPU). Dion improves by 26$\times$ with HSDP gradient replication.}
     \label{fig:scaling}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{figures/fig7_main_grid_multinode.png}
-    \caption{Training metrics for multi-node HSDP (8 GPU). With gradient replication, all optimizers converge effectively.}
+    \includegraphics[width=0.85\textwidth]{figures/fig7_main_grid_multinode.png}
+    \caption{Multi-node HSDP (8 GPU) loss vs.\ tokens. With gradient replication across nodes, all four optimizers converge to near-zero loss.}
     \label{fig:multi_grid}
 \end{figure}
 
