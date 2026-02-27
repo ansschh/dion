@@ -14,6 +14,13 @@ source /resnick/home/atiwari2/envs/adadion/bin/activate
 mkdir -p /resnick/home/atiwari2/ada-dion/logs
 cd /resnick/home/atiwari2/ada-dion/logs
 
-torchrun --nproc_per_node=4 --nnodes=1 --rdzv_backend=c10d --rdzv_endpoint=localhost:29500 -m torchtitan.train --module llama3 --config llama3_debugmodel --training.steps 5
+TOKENIZER=/resnick/home/atiwari2/ada-dion/torchtitan/tests/assets/tokenizer
+
+torchrun --nproc_per_node=4 --nnodes=1 --rdzv_backend=c10d --rdzv_endpoint=localhost:29500 \
+    -m torchtitan.train \
+    --module llama3 \
+    --config llama3_debugmodel \
+    --training.steps 5 \
+    --hf_assets_path "$TOKENIZER"
 
 echo "Done at $(date)"
