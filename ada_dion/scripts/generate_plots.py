@@ -28,28 +28,44 @@ PROJECT_ROOT = SCRIPT_DIR.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from ada_dion.benchmarks.plots import (
-    COLORS, LABELS, _setup_style, _finalize_ax, _place_legend,
+    COLORS, LABELS, _finalize_ax, _place_legend,
     plot_val_loss_vs_tokens,
     plot_val_loss_vs_wallclock,
     plot_tokens_per_sec,
     plot_scaling_tokens_per_sec,
 )
 
-# ── Log parsing ─────────────────────────────────────────────────────
 
-STEP_RE = re.compile(
-    r"\[titan\]\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}),\d+.*"
-    r"step:\s*(\d+)\s+"
-    r"loss:\s*([\d.]+)\s+"
-    r"grad_norm:\s*([\d.]+)\s+"
-    r"memory:\s*([\d.]+)GiB.*"
-    r"tps:\s*([\d,]+)\s+"
-    r"tflops:\s*([\d.]+)\s+"
-    r"mfu:\s*([\d.]+)%"
-)
+def _setup_style():
+    """Apply consistent plot styling (lower DPI to avoid OOM on login nodes)."""
+    plt.rcParams.update({
+        "figure.figsize": (8, 5),
+        "figure.dpi": 100,
+        "font.size": 12,
+        "axes.grid": True,
+        "grid.alpha": 0.3,
+        "grid.linestyle": "--",
+        "legend.fontsize": 10,
+        "legend.framealpha": 0.9,
+        "legend.edgecolor": "0.8",
+    })
+
+# ── Log parsing ─────────────────────────────────────────────────────
 
 OPTIMIZER_RE = re.compile(r"Optimizer:\s*(\w+)")
 SWEEP_RE = re.compile(r"Sweep\s+(\d+)/\d+:\s+(\w+)\s+\|(.+)")
+
+# Individual field patterns — more robust than one giant regex
+TIMESTAMP_RE = re.compile(r"\[titan\]\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})")
+FIELD_RES = {
+    "step": re.compile(r"step:\s*(\d+)"),
+    "loss": re.compile(r"loss:\s*([\d.]+)"),
+    "grad_norm": re.compile(r"grad_norm:\s*([\d.]+)"),
+    "memory_gib": re.compile(r"memory:\s*([\d.]+)GiB"),
+    "tps": re.compile(r"tps:\s*([\d,]+)"),
+    "tflops": re.compile(r"tflops:\s*([\d.]+)"),
+    "mfu": re.compile(r"mfu:\s*([\d.]+)%"),
+}
 
 
 def parse_log(path: Path) -> dict:
@@ -71,31 +87,52 @@ def parse_log(path: Path) -> dict:
         }
         opt_name = opt_name or m.group(2)
 
-    # Parse step lines (deduplicate — each rank prints the same line)
+    # Parse step lines — line by line, deduplicate across ranks
     seen_steps = {}
-    for m in STEP_RE.finditer(text):
-        timestamp_str = m.group(1)
-        step = int(m.group(2))
+    for line in text.splitlines():
+        if "step:" not in line or "loss:" not in line:
+            continue
+        # Skip lines that don't look like titan step logs
+        if "[titan]" not in line and "INFO" not in line:
+            continue
+
+        step_m = FIELD_RES["step"].search(line)
+        if not step_m:
+            continue
+        step = int(step_m.group(1))
         if step in seen_steps:
             continue
-        seen_steps[step] = {
-            "timestamp": datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S"),
-            "step": step,
-            "loss": float(m.group(3)),
-            "grad_norm": float(m.group(4)),
-            "memory_gib": float(m.group(5)),
-            "tps": int(m.group(6).replace(",", "")),
-            "tflops": float(m.group(7)),
-            "mfu": float(m.group(8)),
-        }
+
+        # Extract timestamp
+        ts_m = TIMESTAMP_RE.search(line)
+        timestamp = None
+        if ts_m:
+            timestamp = datetime.strptime(ts_m.group(1), "%Y-%m-%d %H:%M:%S")
+
+        record = {"step": step, "timestamp": timestamp}
+        for field, regex in FIELD_RES.items():
+            if field == "step":
+                continue
+            fm = regex.search(line)
+            if fm:
+                val = fm.group(1)
+                if field == "tps":
+                    record[field] = int(val.replace(",", ""))
+                else:
+                    record[field] = float(val)
+
+        seen_steps[step] = record
 
     records = [seen_steps[s] for s in sorted(seen_steps)]
 
     # Compute wall-clock seconds relative to first step
-    if records:
+    if records and records[0].get("timestamp"):
         t0 = records[0]["timestamp"]
         for r in records:
-            r["time_s"] = (r["timestamp"] - t0).total_seconds()
+            if r.get("timestamp"):
+                r["time_s"] = (r["timestamp"] - t0).total_seconds()
+            else:
+                r["time_s"] = 0.0
 
     return {
         "optimizer": opt_name,
@@ -110,13 +147,13 @@ def records_to_run(records: list[dict], seq_len: int = 2048,
     tokens_per_step = local_batch * seq_len * num_gpus
     return {
         "step": [r["step"] for r in records],
-        "val_loss": [r["loss"] for r in records],
+        "val_loss": [r.get("loss", 0) for r in records],
         "tokens": [r["step"] * tokens_per_step for r in records],
-        "time_s": [r["time_s"] for r in records],
-        "tokens_per_sec": [r["tps"] for r in records],
-        "memory_gib": [r["memory_gib"] for r in records],
-        "mfu": [r["mfu"] for r in records],
-        "grad_norm": [r["grad_norm"] for r in records],
+        "time_s": [r.get("time_s", 0) for r in records],
+        "tokens_per_sec": [r.get("tps", 0) for r in records],
+        "memory_gib": [r.get("memory_gib", 0) for r in records],
+        "mfu": [r.get("mfu", 0) for r in records],
+        "grad_norm": [r.get("grad_norm", 0) for r in records],
     }
 
 
@@ -329,6 +366,9 @@ def main():
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
 
+    # Set low DPI globally to avoid OOM on login nodes
+    _setup_style()
+
     opt_order = ["adamw", "muon", "dion", "dion2"]
 
     # ── Parse Phase 1: Baselines ──
@@ -341,7 +381,18 @@ def main():
             continue
         data = parse_log(log_path)
         baselines[opt] = data["records"]
-        print(f"  {opt}: {len(data['records'])} step records")
+        if data["records"]:
+            r = data["records"][-1]
+            print(f"  {opt}: {len(data['records'])} records, final step={r['step']} loss={r.get('loss', '?')}")
+        else:
+            # Debug: show first few lines with "step:" to diagnose regex
+            with open(log_path) as f:
+                for line in f:
+                    if "step:" in line and "loss:" in line:
+                        print(f"  {opt}: 0 records. Sample line: {line.strip()[:120]}")
+                        break
+                else:
+                    print(f"  {opt}: 0 records, no step/loss lines found")
 
     # ── Parse Phase 2: Sweep ──
     print("Parsing Phase 2: HP Sweep...")
