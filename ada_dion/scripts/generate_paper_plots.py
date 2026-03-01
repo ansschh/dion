@@ -397,7 +397,7 @@ def plot_sweep_heatmaps(sweep_data):
             continue
         args = info["extra_args"]
         lr_m = re.search(r"lr\s+([\d.]+)", args)
-        rf_m = re.search(r"rank_frac\s+([\d.]+)", args)
+        rf_m = re.search(r"rank_frac(?:tion)?\s+([\d.]+)", args)
         if lr_m and rf_m:
             lr, rf = float(lr_m.group(1)), float(rf_m.group(1))
             if lr in lrs_dion and rf in rfs:
@@ -409,7 +409,7 @@ def plot_sweep_heatmaps(sweep_data):
     ax1.set_xticklabels([str(r) for r in rfs])
     ax1.set_yticks(range(3))
     ax1.set_yticklabels([str(lr) for lr in lrs_dion])
-    ax1.set_xlabel("rank_frac")
+    ax1.set_xlabel("rank_fraction")
     ax1.set_ylabel("Learning Rate")
     ax1.set_title("Dion: Final Loss @ 5k steps")
     for i in range(3):
@@ -430,7 +430,7 @@ def plot_sweep_heatmaps(sweep_data):
             continue
         args = info["extra_args"]
         lr_m = re.search(r"lr\s+([\d.]+)", args)
-        a_m = re.search(r"alpha\s+([\d.]+)", args)
+        a_m = re.search(r"(?:alpha|fraction)\s+([\d.]+)", args)
         if lr_m and a_m:
             lr, alpha = float(lr_m.group(1)), float(a_m.group(1))
             if lr in lrs_dion and alpha in alphas:
@@ -442,7 +442,7 @@ def plot_sweep_heatmaps(sweep_data):
     ax2.set_xticklabels([str(a) for a in alphas])
     ax2.set_yticks(range(3))
     ax2.set_yticklabels([str(lr) for lr in lrs_dion])
-    ax2.set_xlabel("alpha")
+    ax2.set_xlabel("fraction")
     ax2.set_ylabel("Learning Rate")
     ax2.set_title("Dion2: Final Loss @ 5k steps")
     for i in range(3):

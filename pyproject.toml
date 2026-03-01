@@ -13,6 +13,7 @@ dependencies = [
     "matplotlib",
     "seaborn",
     "tqdm",
+    "dion @ git+https://github.com/microsoft/dion.git",
 ]
 
 [project.optional-dependencies]

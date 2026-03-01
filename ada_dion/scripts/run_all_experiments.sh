@@ -86,22 +86,12 @@ run_phase3() {
     echo "  PHASE 3: Dion2 Ablations"
     echo "============================================================"
 
-    # Alpha sweep
-    for alpha in 0.25 0.5 1.0; do
-        echo "--- Phase 3: Dion2 alpha=$alpha, top_l1 ---"
-        export WANDB_RUN_NAME="ablation_dion2_alpha${alpha}_topl1"
+    # Fraction sweep
+    for frac in 0.25 0.5 1.0; do
+        echo "--- Phase 3: Dion2 fraction=$frac ---"
+        export WANDB_RUN_NAME="ablation_dion2_frac${frac}"
         STEPS=5000 NGPU=8 bash ada_dion/scripts/run_single_node.sh dion2 \
-            --optimizer.alpha "$alpha" \
-            --optimizer.selection top_l1
-    done
-
-    # Selection method comparison
-    for sel in top_l1 random; do
-        echo "--- Phase 3: Dion2 alpha=0.25, selection=$sel ---"
-        export WANDB_RUN_NAME="ablation_dion2_sel_${sel}"
-        STEPS=5000 NGPU=8 bash ada_dion/scripts/run_single_node.sh dion2 \
-            --optimizer.alpha 0.25 \
-            --optimizer.selection "$sel"
+            --optimizer.fraction "$frac"
     done
 }
 

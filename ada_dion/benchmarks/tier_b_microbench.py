@@ -14,9 +14,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from ..optim.muon import Muon
-from ..optim.dion import Dion
-from ..optim.dion2 import Dion2
+from dion import Muon, Dion, Dion2
 
 
 # ======================================================================
@@ -28,8 +26,8 @@ def benchmark_optimizer_step(
     shapes: Optional[list[tuple[int, int]]] = None,
     warmup_steps: int = 10,
     measure_steps: int = 100,
-    dion_rank_frac: float = 0.25,
-    dion2_alpha: float = 0.25,
+    dion_rank_fraction: float = 0.25,
+    dion2_fraction: float = 0.25,
 ) -> dict:
     """
     Time optimizer.step() in isolation for each optimizer.
@@ -48,9 +46,9 @@ def benchmark_optimizer_step(
 
     optimizers_config = [
         ("AdamW", torch.optim.AdamW, {"lr": 3e-4, "weight_decay": 0.1}),
-        ("Muon", Muon, {"lr": 0.02, "mu": 0.95, "ns_steps": 5}),
-        ("Dion", Dion, {"lr": 0.02, "rank_frac": dion_rank_frac, "beta": 0.05}),
-        ("Dion2", Dion2, {"lr": 0.02, "alpha": dion2_alpha, "selection": "top_l1", "mu": 0.95}),
+        ("Muon", Muon, {"lr": 0.02, "mu": 0.95}),
+        ("Dion", Dion, {"lr": 0.02, "rank_fraction": dion_rank_fraction}),
+        ("Dion2", Dion2, {"lr": 0.02, "fraction": dion2_fraction}),
     ]
 
     results = {}

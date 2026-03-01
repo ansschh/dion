@@ -4,8 +4,8 @@ Hyperparameter sweep driver.
 Generates a structured small sweep per optimizer:
   - AdamW: lr (3 values)
   - Muon: lr (3 values)
-  - Dion: lr (3 values) x rank_frac (3 values) = 9 configs
-  - Dion2: lr (3 values) x alpha (3 values) = 9 configs
+  - Dion: lr (3 values) x rank_fraction (3 values) = 9 configs
+  - Dion2: lr (3 values) x fraction (3 values) = 9 configs
 
 Total: 3 + 3 + 9 + 9 = 24 runs.
 Each run: 5000 steps on 8 GPUs FSDP.
@@ -39,11 +39,11 @@ SWEEP_GRIDS = {
     },
     "dion": {
         "lr": [0.005, 0.02, 0.05],
-        "rank_frac": [0.1, 0.25, 0.5],
+        "rank_fraction": [0.1, 0.25, 0.5],
     },
     "dion2": {
         "lr": [0.005, 0.02, 0.05],
-        "alpha": [0.1, 0.25, 0.5],
+        "fraction": [0.1, 0.25, 0.5],
     },
 }
 
@@ -57,8 +57,8 @@ CONFIG_FN_MAP = {
 # Map sweep param names to CLI override paths
 PARAM_CLI_MAP = {
     "lr": "optimizer.lr",
-    "rank_frac": "optimizer.rank_frac",
-    "alpha": "optimizer.alpha",
+    "rank_fraction": "optimizer.rank_fraction",
+    "fraction": "optimizer.fraction",
 }
 
 

@@ -7,3 +7,4 @@ tensorboard
 tqdm
 datasets
 pytest
+dion @ git+https://github.com/microsoft/dion.git

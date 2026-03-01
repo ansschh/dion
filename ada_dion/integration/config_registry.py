@@ -170,7 +170,6 @@ def llama3_160m_muon() -> Trainer.Config:
             name="Muon",
             lr=0.02,
             mu=0.95,
-            ns_steps=5,
             weight_decay=0.0,
             scalar_lr=3e-4,
             scalar_weight_decay=0.01,
@@ -205,8 +204,7 @@ def llama3_160m_dion() -> Trainer.Config:
         optimizer=HybridOptimizersContainer.Config(
             name="Dion",
             lr=0.02,
-            rank_frac=0.25,
-            dion_beta=0.05,
+            rank_fraction=0.25,
             weight_decay=0.0,
             scalar_lr=3e-4,
             scalar_weight_decay=0.01,
@@ -235,16 +233,14 @@ def llama3_160m_dion() -> Trainer.Config:
 # ======================================================================
 
 def llama3_160m_dion2() -> Trainer.Config:
-    """LLaMA3 160M with Dion2 (alpha-fraction selection + NS) + AdamW scalar."""
+    """LLaMA3 160M with Dion2 (fraction selection + NS) + AdamW scalar."""
     return Trainer.Config(
         model_spec=_model_registry_160m(),
         optimizer=HybridOptimizersContainer.Config(
             name="Dion2",
             lr=0.02,
-            alpha=0.25,
-            selection="top_l1",
-            dion2_mu=0.95,
-            ns_steps=5,
+            fraction=0.25,
+            ef_decay=0.95,
             weight_decay=0.0,
             scalar_lr=3e-4,
             scalar_weight_decay=0.01,
@@ -311,7 +307,6 @@ def llama3_debug_muon() -> Trainer.Config:
             name="Muon",
             lr=0.02,
             mu=0.95,
-            ns_steps=5,
             weight_decay=0.0,
             scalar_lr=3e-4,
             scalar_weight_decay=0.01,
@@ -342,8 +337,7 @@ def llama3_debug_dion() -> Trainer.Config:
     config.optimizer = HybridOptimizersContainer.Config(
         name="Dion",
         lr=0.02,
-        rank_frac=0.25,
-        dion_beta=0.05,
+        rank_fraction=0.25,
         weight_decay=0.0,
         scalar_lr=3e-4,
         scalar_weight_decay=0.01,
@@ -357,10 +351,8 @@ def llama3_debug_dion2() -> Trainer.Config:
     config.optimizer = HybridOptimizersContainer.Config(
         name="Dion2",
         lr=0.02,
-        alpha=0.25,
-        selection="top_l1",
-        dion2_mu=0.95,
-        ns_steps=5,
+        fraction=0.25,
+        ef_decay=0.95,
         weight_decay=0.0,
         scalar_lr=3e-4,
         scalar_weight_decay=0.01,

@@ -54,10 +54,8 @@ class TestHybridOptimizersContainerUnit:
         assert len(groups.norm_params) >= 3
 
     def test_optimizers_can_step_on_groups(self):
-        """Test that our optimizers work on grouped params."""
-        from ada_dion.optim.muon import Muon
-        from ada_dion.optim.dion import Dion
-        from ada_dion.optim.dion2 import Dion2
+        """Test that official optimizers work on grouped params."""
+        from dion import Muon, Dion, Dion2
         from ada_dion.integration.param_grouper import group_params_for_hybrid
 
         model = SimpleModel()
@@ -66,8 +64,8 @@ class TestHybridOptimizersContainerUnit:
         # Test each matrix optimizer
         for opt_cls, kwargs in [
             (Muon, {"lr": 0.02, "mu": 0.95}),
-            (Dion, {"lr": 0.02, "rank_frac": 0.25}),
-            (Dion2, {"lr": 0.02, "alpha": 0.5, "mu": 0.95}),
+            (Dion, {"lr": 0.02, "rank_fraction": 0.25}),
+            (Dion2, {"lr": 0.02, "fraction": 0.5}),
         ]:
             # Reset model
             model = SimpleModel()
@@ -94,7 +92,7 @@ class TestHybridOptimizersContainerUnit:
 
     def test_all_params_get_updated(self):
         """Both matrix and scalar params should change after a step."""
-        from ada_dion.optim.muon import Muon
+        from dion import Muon
         from ada_dion.integration.param_grouper import group_params_for_hybrid
 
         model = SimpleModel()

@@ -66,7 +66,7 @@ All optimizers use a hybrid setup: a \emph{matrix optimizer} for 2D weight matri
 \begin{itemize}
     \item \textbf{AdamW:} Standard baseline. Applied uniformly to all parameters.
     \item \textbf{Muon:} Applies Newton-Schulz iteration (5 steps, quintic polynomials) to the momentum buffer at every step, producing an approximately orthonormal update. Momentum $\mu = 0.95$.
-    \item \textbf{Dion:} Maintains a low-rank subspace via power iteration. Projects the momentum-corrected gradient onto a rank-$r$ basis ($r = \lfloor \text{rank\_frac} \times \min(m,n) \rfloor$) using QR decomposition. Error feedback carries the residual forward. Communication cost scales as $O((m+n) \cdot r)$ instead of $O(m \cdot n)$.
+    \item \textbf{Dion:} Maintains a low-rank subspace via power iteration. Projects the momentum-corrected gradient onto a rank-$r$ basis ($r = \lfloor \text{rank\_fraction} \times \min(m,n) \rfloor$) using QR decomposition. Error feedback carries the residual forward. Communication cost scales as $O((m+n) \cdot r)$ instead of $O(m \cdot n)$.
     \item \textbf{Dion2:} Selects an $\alpha$-fraction of rows by L1 norm from the momentum buffer, applies Newton-Schulz orthonormalization to the selected submatrix, and applies \emph{selective decay} (only decaying selected rows). Produces sparse updates.
 \end{itemize}
 
@@ -81,7 +81,7 @@ We swept learning rates and optimizer-specific parameters across 24 configuratio
 \label{tab:sweep}
 \begin{tabular}{llccc}
 \toprule
-\textbf{Optimizer} & \textbf{LR} & \textbf{rank\_frac / $\alpha$} & \textbf{Final Loss} & \textbf{Status} \\
+\textbf{Optimizer} & \textbf{LR} & \textbf{rank\_fraction / $\alpha$} & \textbf{Final Loss} & \textbf{Status} \\
 \midrule
 AdamW   & $1\times10^{-4}$ & ---   & 1.010 & Under-trained \\
 AdamW   & $3\times10^{-4}$ & ---   & 0.023 & Good \\
@@ -183,7 +183,7 @@ Per-GPU throughput decreases slightly when going from 4 to 8 GPUs (e.g., AdamW: 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{figures/fig5_sweep_heatmaps.png}
-    \caption{Hyperparameter sweep results (24 configurations, 5k steps each). Clear pattern: lr=0.005 with high rank\_frac/alpha is optimal for both Dion and Dion2.}
+    \caption{Hyperparameter sweep results (24 configurations, 5k steps each). Clear pattern: lr=0.005 with high rank\_fraction/alpha is optimal for both Dion and Dion2.}
     \label{fig:sweep}
 \end{figure}
 

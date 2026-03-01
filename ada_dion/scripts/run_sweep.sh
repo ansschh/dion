@@ -51,19 +51,19 @@ for lr in 0.005 0.02 0.05; do
     run_config "muon_lr${lr}" llama3_160m_muon --optimizer.lr "$lr"
 done
 
-# Dion sweep: lr x 3, rank_frac x 3
+# Dion sweep: lr x 3, rank_fraction x 3
 for lr in 0.005 0.02 0.05; do
     for rf in 0.1 0.25 0.5; do
         run_config "dion_lr${lr}_rf${rf}" llama3_160m_dion \
-            --optimizer.lr "$lr" --optimizer.rank_frac "$rf"
+            --optimizer.lr "$lr" --optimizer.rank_fraction "$rf"
     done
 done
 
-# Dion2 sweep: lr x 3, alpha x 3
+# Dion2 sweep: lr x 3, fraction x 3
 for lr in 0.005 0.02 0.05; do
     for alpha in 0.1 0.25 0.5; do
         run_config "dion2_lr${lr}_a${alpha}" llama3_160m_dion2 \
-            --optimizer.lr "$lr" --optimizer.alpha "$alpha"
+            --optimizer.lr "$lr" --optimizer.fraction "$alpha"
     done
 done
 

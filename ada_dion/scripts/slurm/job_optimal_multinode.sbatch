@@ -34,8 +34,8 @@ MASTER_PORT=$(( 29500 + SLURM_ARRAY_TASK_ID ))
 CONFIGS=(
     "adamw llama3_160m_adamw --optimizer.lr 1e-3"
     "muon llama3_160m_muon --optimizer.lr 0.005"
-    "dion llama3_160m_dion --optimizer.lr 0.005 --optimizer.rank_frac 0.5"
-    "dion2 llama3_160m_dion2 --optimizer.lr 0.005 --optimizer.alpha 0.5"
+    "dion llama3_160m_dion --optimizer.lr 0.005 --optimizer.rank_fraction 0.5"
+    "dion2 llama3_160m_dion2 --optimizer.lr 0.005 --optimizer.fraction 0.5"
 )
 
 CONFIG_LINE="${CONFIGS[$SLURM_ARRAY_TASK_ID]}"
