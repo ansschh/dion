@@ -14,7 +14,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=128G
 #SBATCH --time=6:00:00
-#SBATCH --array=0-3
+#SBATCH --array=0-4
 #SBATCH --output=logs/optimal_multi_%A_%a.out
 #SBATCH --error=logs/optimal_multi_%A_%a.err
 
@@ -36,6 +36,7 @@ CONFIGS=(
     "muon llama3_160m_muon --optimizer.lr 0.005"
     "dion llama3_160m_dion --optimizer.lr 0.005 --optimizer.rank_fraction 0.5"
     "dion2 llama3_160m_dion2 --optimizer.lr 0.005 --optimizer.fraction 0.5"
+    "adadion llama3_160m_adadion --optimizer.lr 0.005 --optimizer.rank_fraction 0.5"
 )
 
 CONFIG_LINE="${CONFIGS[$SLURM_ARRAY_TASK_ID]}"

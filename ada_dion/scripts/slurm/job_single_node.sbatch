@@ -37,11 +37,12 @@ export WANDB_PROJECT="${WANDB_PROJECT:-ada-dion-caltech}"
 export WANDB_RUN_NAME="${OPTIMIZER}_${NGPU}gpu_${STEPS}steps_${SLURM_JOB_ID}"
 
 case "$OPTIMIZER" in
-    adamw) CONFIG_FN="llama3_160m_adamw" ;;
-    muon)  CONFIG_FN="llama3_160m_muon" ;;
-    dion)  CONFIG_FN="llama3_160m_dion" ;;
-    dion2) CONFIG_FN="llama3_160m_dion2" ;;
-    *)     echo "Unknown: $OPTIMIZER"; exit 1 ;;
+    adamw)   CONFIG_FN="llama3_160m_adamw" ;;
+    muon)    CONFIG_FN="llama3_160m_muon" ;;
+    dion)    CONFIG_FN="llama3_160m_dion" ;;
+    dion2)   CONFIG_FN="llama3_160m_dion2" ;;
+    adadion) CONFIG_FN="llama3_160m_adadion" ;;
+    *)       echo "Unknown: $OPTIMIZER"; exit 1 ;;
 esac
 
 torchrun \

@@ -21,7 +21,7 @@ echo "=== Submitting all experiment phases ==="
 echo ""
 echo "--- Phase 1: Performance Characterization ---"
 PHASE1_JOBS=""
-for opt in adamw muon dion dion2; do
+for opt in adamw muon dion dion2 adadion; do
     JOB_ID=$(sbatch --parsable \
         --job-name="p1_${opt}" \
         --export="ALL,STEPS=500" \
@@ -35,7 +35,7 @@ echo ""
 echo "--- Phase 2: Convergence (after Phase 1 completes) ---"
 PHASE2_JOBS=""
 for seed in 42 123 7; do
-    for opt in adamw muon dion dion2; do
+    for opt in adamw muon dion dion2 adadion; do
         JOB_ID=$(sbatch --parsable \
             --dependency=afterany${PHASE1_JOBS} \
             --job-name="p2_${opt}_s${seed}" \
