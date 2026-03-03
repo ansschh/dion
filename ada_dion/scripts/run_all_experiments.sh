@@ -18,7 +18,7 @@ PHASE=${1:-all}
 export WANDB_PROJECT="${WANDB_PROJECT:-ada-dion-benchmark}"
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 
-OPTIMIZERS="adamw muon dion dion2"
+OPTIMIZERS="adamw muon dion dion2 adadion"
 
 # ============================================================
 # Phase 1: Performance Characterization (500 steps)

@@ -63,6 +63,13 @@ class HybridOptimizersContainer(OptimizersContainer):
         fraction: float = 0.25
         ef_decay: float = 0.95
 
+        # --- AdaDion-specific ---
+        anchor_lambda: float = 0.1
+        anchor_rho: float = 0.99
+        tau_hi: float = 0.8
+        tau_lo: float = 0.3
+        refresh_period: int = 100
+
         # --- Scalar optimizer (AdamW param groups) ---
         scalar_lr: float = 3e-4
         scalar_weight_decay: float = 0.01
@@ -179,10 +186,24 @@ class HybridOptimizersContainer(OptimizersContainer):
                 ef_decay=config.ef_decay,
                 weight_decay=config.weight_decay,
             )
+        elif name == "AdaDion":
+            from ada_dion.optim import AdaDion
+            return AdaDion(
+                param_groups,
+                lr=config.lr,
+                mu=config.mu,
+                rank_fraction=config.rank_fraction,
+                anchor_lambda=config.anchor_lambda,
+                anchor_rho=config.anchor_rho,
+                tau_hi=config.tau_hi,
+                tau_lo=config.tau_lo,
+                weight_decay=config.weight_decay,
+                refresh_period=config.refresh_period,
+            )
         else:
             raise ValueError(
                 f"Unknown matrix optimizer: {name!r}. "
-                f"Supported: 'Muon', 'Dion', 'Dion2'"
+                f"Supported: 'Muon', 'Dion', 'Dion2', 'AdaDion'"
             )
 
     def _validate_length(self, expected_length: int) -> None:

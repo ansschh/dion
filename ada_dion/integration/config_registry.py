@@ -265,6 +265,47 @@ def llama3_160m_dion2() -> Trainer.Config:
 
 
 # ======================================================================
+# AdaDion
+# ======================================================================
+
+def llama3_160m_adadion() -> Trainer.Config:
+    """LLaMA3 160M with AdaDion (adaptive low-rank + anchor) + AdamW scalar."""
+    return Trainer.Config(
+        model_spec=_model_registry_160m(),
+        optimizer=HybridOptimizersContainer.Config(
+            name="AdaDion",
+            lr=0.02,
+            mu=0.95,
+            rank_fraction=0.25,
+            anchor_lambda=0.1,
+            anchor_rho=0.99,
+            tau_hi=0.8,
+            tau_lo=0.3,
+            refresh_period=100,
+            weight_decay=0.0,
+            scalar_lr=3e-4,
+            scalar_weight_decay=0.01,
+        ),
+        lr_scheduler=_base_lr_scheduler_config(),
+        training=_base_training_config(),
+        dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
+        metrics=_base_metrics_config(),
+        activation_checkpoint=ActivationCheckpointConfig(
+            mode="selective",
+            selective_ac_option="2",
+        ),
+        checkpoint=CheckpointManager.Config(
+            interval=1000,
+            last_save_model_only=True,
+        ),
+        validator=Validator.Config(
+            freq=100,
+            steps=20,
+        ),
+    )
+
+
+# ======================================================================
 # Debug / quick validation configs
 # ======================================================================
 
@@ -338,6 +379,26 @@ def llama3_debug_dion() -> Trainer.Config:
         name="Dion",
         lr=0.02,
         rank_fraction=0.25,
+        weight_decay=0.0,
+        scalar_lr=3e-4,
+        scalar_weight_decay=0.01,
+    )
+    return config
+
+
+def llama3_debug_adadion() -> Trainer.Config:
+    """Tiny debug model with AdaDion — for local validation."""
+    config = llama3_debug_muon()
+    config.optimizer = HybridOptimizersContainer.Config(
+        name="AdaDion",
+        lr=0.02,
+        mu=0.95,
+        rank_fraction=0.25,
+        anchor_lambda=0.1,
+        anchor_rho=0.99,
+        tau_hi=0.8,
+        tau_lo=0.3,
+        refresh_period=100,
         weight_decay=0.0,
         scalar_lr=3e-4,
         scalar_weight_decay=0.01,

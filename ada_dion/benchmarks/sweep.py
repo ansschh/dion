@@ -6,8 +6,9 @@ Generates a structured small sweep per optimizer:
   - Muon: lr (3 values)
   - Dion: lr (3 values) x rank_fraction (3 values) = 9 configs
   - Dion2: lr (3 values) x fraction (3 values) = 9 configs
+  - AdaDion: lr (3 values) x rank_fraction (3 values) = 9 configs
 
-Total: 3 + 3 + 9 + 9 = 24 runs.
+Total: 3 + 3 + 9 + 9 + 9 = 33 runs.
 Each run: 5000 steps on 8 GPUs FSDP.
 """
 from __future__ import annotations
@@ -45,6 +46,10 @@ SWEEP_GRIDS = {
         "lr": [0.005, 0.02, 0.05],
         "fraction": [0.1, 0.25, 0.5],
     },
+    "adadion": {
+        "lr": [0.005, 0.02, 0.05],
+        "rank_fraction": [0.1, 0.25, 0.5],
+    },
 }
 
 CONFIG_FN_MAP = {
@@ -52,6 +57,7 @@ CONFIG_FN_MAP = {
     "muon": "llama3_160m_muon",
     "dion": "llama3_160m_dion",
     "dion2": "llama3_160m_dion2",
+    "adadion": "llama3_160m_adadion",
 }
 
 # Map sweep param names to CLI override paths
@@ -59,6 +65,7 @@ PARAM_CLI_MAP = {
     "lr": "optimizer.lr",
     "rank_fraction": "optimizer.rank_fraction",
     "fraction": "optimizer.fraction",
+    "anchor_lambda": "optimizer.anchor_lambda",
 }
 
 

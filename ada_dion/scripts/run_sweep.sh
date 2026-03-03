@@ -67,5 +67,13 @@ for lr in 0.005 0.02 0.05; do
     done
 done
 
+# AdaDion sweep: lr x 3, rank_fraction x 3
+for lr in 0.005 0.02 0.05; do
+    for rf in 0.1 0.25 0.5; do
+        run_config "adadion_lr${lr}_rf${rf}" llama3_160m_adadion \
+            --optimizer.lr "$lr" --optimizer.rank_fraction "$rf"
+    done
+done
+
 echo ""
 echo "=== Sweep complete ==="

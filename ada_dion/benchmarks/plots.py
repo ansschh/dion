@@ -416,18 +416,127 @@ def plot_dion2_alpha_sparsity(
     return fig
 
 
-def plot_adadion_stub() -> plt.Figure:
-    """Plot 11: Stub for future AdaDion effective-rank estimate plot."""
+def plot_adadion_diagnostics(
+    data: dict,
+) -> plt.Figure:
+    """
+    Plot 11: AdaDion diagnostics — 4-panel view.
+
+    Args:
+        data: {
+            "step": [...],
+            "anchor_drift_mean": [...],
+            "tail_ratio_mean": [...],
+            "rank_mean": [...],
+            "energy_mean": [...],
+        }
+    """
     _setup_style()
-    fig, ax = plt.subplots()
-    ax.text(0.5, 0.5, "AdaDion plot\n(not yet implemented)",
-            ha="center", va="center", fontsize=16, color="gray",
-            transform=ax.transAxes)
-    ax.set_title("AdaDion: Effective Rank Estimate vs Chosen r/alpha")
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    steps = data["step"]
+    color = COLORS["adadion"]
+
+    # Panel 1: Anchor drift
+    ax = axes[0, 0]
+    ax.plot(steps, data["anchor_drift_mean"], color=color, linewidth=1.5, zorder=3)
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel("||Q - Q_anc||_F (mean)")
+    ax.set_title("Anchor Drift")
+    _finalize_ax(ax)
+
+    # Panel 2: Tail ratio (tau)
+    ax = axes[0, 1]
+    ax.plot(steps, data["tail_ratio_mean"], color=color, linewidth=1.5, zorder=3)
+    ax.axhline(y=0.3, color="red", linestyle="--", alpha=0.5, label="tau_lo", zorder=2)
+    ax.axhline(y=0.8, color="green", linestyle="--", alpha=0.5, label="tau_hi", zorder=2)
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel("tau = 1 - lambda_2/lambda_1")
+    ax.set_title("Eigenvalue Gap (Tail Ratio)")
+    ax.set_ylim(-0.05, 1.05)
+    _finalize_ax(ax)
+    _place_legend(ax, loc="lower right")
+
+    # Panel 3: Effective rank
+    ax = axes[1, 0]
+    ax.plot(steps, data["rank_mean"], color=color, linewidth=1.5, zorder=3)
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel("Rank r")
+    ax.set_title("Effective Rank")
+    _finalize_ax(ax)
+
+    # Panel 4: Energy captured
+    ax = axes[1, 1]
+    ax.plot(steps, data["energy_mean"], color=color, linewidth=1.5, zorder=3)
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel("sum(top_r) / sum(all)")
+    ax.set_title("Energy Captured by Subspace")
+    ax.set_ylim(-0.05, 1.05)
+    _finalize_ax(ax)
+
+    fig.suptitle("AdaDion Optimizer Diagnostics", fontsize=14, y=1.01)
+    fig.tight_layout()
+    return fig
+
+
+def plot_adadion_anchor_drift(data: dict) -> plt.Figure:
+    """Individual panel: Anchor Drift over training."""
+    _setup_style()
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(data["step"], data["anchor_drift_mean"],
+            color=COLORS["adadion"], linewidth=1.5, zorder=3)
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel(r"$\|Q - Q_{\mathrm{anc}}\|_F$ (mean)")
+    ax.set_title("AdaDion: Anchor Drift")
+    _finalize_ax(ax)
+    fig.tight_layout()
+    return fig
+
+
+def plot_adadion_tail_ratio(data: dict) -> plt.Figure:
+    """Individual panel: Eigenvalue Gap (Tail Ratio) over training."""
+    _setup_style()
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(data["step"], data["tail_ratio_mean"],
+            color=COLORS["adadion"], linewidth=1.5, zorder=3)
+    ax.axhline(y=0.3, color="red", linestyle="--", alpha=0.5,
+               label=r"$\tau_{\mathrm{lo}}$", zorder=2)
+    ax.axhline(y=0.8, color="green", linestyle="--", alpha=0.5,
+               label=r"$\tau_{\mathrm{hi}}$", zorder=2)
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel(r"$\tau = 1 - \lambda_2 / \lambda_1$")
+    ax.set_title("AdaDion: Eigenvalue Gap (Tail Ratio)")
+    ax.set_ylim(-0.05, 1.05)
+    _finalize_ax(ax)
+    _place_legend(ax, loc="lower right")
+    fig.tight_layout()
+    return fig
+
+
+def plot_adadion_effective_rank(data: dict) -> plt.Figure:
+    """Individual panel: Effective Rank over training."""
+    _setup_style()
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(data["step"], data["rank_mean"],
+            color=COLORS["adadion"], linewidth=1.5, zorder=3)
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel("Rank $r$")
+    ax.set_title("AdaDion: Effective Rank")
+    _finalize_ax(ax)
+    fig.tight_layout()
+    return fig
+
+
+def plot_adadion_energy_captured(data: dict) -> plt.Figure:
+    """Individual panel: Energy Captured by Subspace over training."""
+    _setup_style()
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(data["step"], data["energy_mean"],
+            color=COLORS["adadion"], linewidth=1.5, zorder=3)
+    ax.set_xlabel("Training Step")
+    ax.set_ylabel(r"$\sum(\mathrm{top}_r) \;/\; \sum(\mathrm{all})$")
+    ax.set_title("AdaDion: Energy Captured by Subspace")
+    ax.set_ylim(-0.05, 1.05)
+    _finalize_ax(ax)
     fig.tight_layout()
     return fig
 
@@ -447,72 +556,80 @@ def load_metrics_jsonl(path: str) -> list[dict]:
     return records
 
 
+def _save_fig(fig: plt.Figure, path: Path, pdf: bool = True):
+    """Save figure as PNG and optionally as PDF."""
+    fig.savefig(path, bbox_inches="tight")
+    if pdf:
+        fig.savefig(path.with_suffix(".pdf"), bbox_inches="tight")
+    plt.close(fig)
+
+
 def save_all_plots(
     output_dir: str,
     runs: Optional[dict] = None,
     dion_data: Optional[dict] = None,
     dion2_data: Optional[dict] = None,
+    adadion_data: Optional[dict] = None,
+    pdf: bool = True,
 ):
-    """Save all available plots to output directory."""
+    """Save all available plots to output directory (PNG + PDF)."""
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
     if runs:
         # Core plots
         if all("tokens" in r and "val_loss" in r for r in runs.values()):
-            fig = plot_val_loss_vs_tokens(runs)
-            fig.savefig(output_path / "01_val_loss_vs_tokens.png", bbox_inches="tight")
-            plt.close(fig)
+            _save_fig(plot_val_loss_vs_tokens(runs),
+                      output_path / "01_val_loss_vs_tokens.png", pdf)
 
         if all("time_s" in r and "val_loss" in r for r in runs.values()):
-            fig = plot_val_loss_vs_wallclock(runs)
-            fig.savefig(output_path / "02_val_loss_vs_wallclock.png", bbox_inches="tight")
-            plt.close(fig)
+            _save_fig(plot_val_loss_vs_wallclock(runs),
+                      output_path / "02_val_loss_vs_wallclock.png", pdf)
 
         if all("step" in r and "tokens_per_sec" in r for r in runs.values()):
-            fig = plot_tokens_per_sec(runs)
-            fig.savefig(output_path / "03_tokens_per_sec.png", bbox_inches="tight")
-            plt.close(fig)
+            _save_fig(plot_tokens_per_sec(runs),
+                      output_path / "03_tokens_per_sec.png", pdf)
 
         if all("num_gpus" in r and "tokens_per_sec" in r for r in runs.values()):
-            fig = plot_scaling_tokens_per_sec(runs)
-            fig.savefig(output_path / "04_scaling.png", bbox_inches="tight")
-            plt.close(fig)
+            _save_fig(plot_scaling_tokens_per_sec(runs),
+                      output_path / "04_scaling.png", pdf)
 
         if all("fwd_ms" in r for r in runs.values()):
-            fig = plot_step_time_breakdown(runs)
-            fig.savefig(output_path / "05_step_time_breakdown.png", bbox_inches="tight")
-            plt.close(fig)
+            _save_fig(plot_step_time_breakdown(runs),
+                      output_path / "05_step_time_breakdown.png", pdf)
 
         if all("allreduce_bytes" in r for r in runs.values()):
-            fig = plot_communicated_bytes(runs)
-            fig.savefig(output_path / "06_communicated_bytes.png", bbox_inches="tight")
-            plt.close(fig)
+            _save_fig(plot_communicated_bytes(runs),
+                      output_path / "06_communicated_bytes.png", pdf)
 
         if all("allreduce_ms" in r for r in runs.values()):
-            fig = plot_collective_time(runs)
-            fig.savefig(output_path / "07_collective_time.png", bbox_inches="tight")
-            plt.close(fig)
+            _save_fig(plot_collective_time(runs),
+                      output_path / "07_collective_time.png", pdf)
 
         if all("num_gpus" in r and "comm_compute_ratio" in r for r in runs.values()):
-            fig = plot_comm_compute_ratio(runs)
-            fig.savefig(output_path / "08_comm_compute_ratio.png", bbox_inches="tight")
-            plt.close(fig)
+            _save_fig(plot_comm_compute_ratio(runs),
+                      output_path / "08_comm_compute_ratio.png", pdf)
 
     # Optimizer-specific plots
     if dion_data:
-        fig = plot_dion_rank_residual(dion_data)
-        fig.savefig(output_path / "09_dion_rank_residual.png", bbox_inches="tight")
-        plt.close(fig)
+        _save_fig(plot_dion_rank_residual(dion_data),
+                  output_path / "09_dion_rank_residual.png", pdf)
 
     if dion2_data:
-        fig = plot_dion2_alpha_sparsity(dion2_data)
-        fig.savefig(output_path / "10_dion2_alpha_sparsity.png", bbox_inches="tight")
-        plt.close(fig)
+        _save_fig(plot_dion2_alpha_sparsity(dion2_data),
+                  output_path / "10_dion2_alpha_sparsity.png", pdf)
 
-    # Stub
-    fig = plot_adadion_stub()
-    fig.savefig(output_path / "11_adadion_stub.png", bbox_inches="tight")
-    plt.close(fig)
+    # AdaDion diagnostics — combined 4-panel + individual panels
+    if adadion_data:
+        _save_fig(plot_adadion_diagnostics(adadion_data),
+                  output_path / "11_adadion_diagnostics.png", pdf)
+        _save_fig(plot_adadion_anchor_drift(adadion_data),
+                  output_path / "11a_adadion_anchor_drift.png", pdf)
+        _save_fig(plot_adadion_tail_ratio(adadion_data),
+                  output_path / "11b_adadion_tail_ratio.png", pdf)
+        _save_fig(plot_adadion_effective_rank(adadion_data),
+                  output_path / "11c_adadion_effective_rank.png", pdf)
+        _save_fig(plot_adadion_energy_captured(adadion_data),
+                  output_path / "11d_adadion_energy_captured.png", pdf)
 
     print(f"Plots saved to {output_path}")

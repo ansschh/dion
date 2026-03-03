@@ -6,11 +6,12 @@
 #   bash ada_dion/scripts/run_single_node.sh dion         # Dion optimizer
 #   bash ada_dion/scripts/run_single_node.sh dion2        # Dion2 optimizer
 #   bash ada_dion/scripts/run_single_node.sh adamw        # AdamW baseline
+#   bash ada_dion/scripts/run_single_node.sh adadion      # AdaDion optimizer
 #   STEPS=500 NGPU=4 bash ada_dion/scripts/run_single_node.sh muon
 
 set -e
 
-OPTIMIZER=${1:?Usage: $0 <muon|dion|dion2|adamw> [extra_args...]}
+OPTIMIZER=${1:?Usage: $0 <muon|dion|dion2|adamw|adadion> [extra_args...]}
 shift
 EXTRA_ARGS="$@"
 
@@ -19,13 +20,14 @@ STEPS=${STEPS:-10000}
 
 # Map optimizer to config function
 case "$OPTIMIZER" in
-    muon)   CONFIG="llama3_160m_muon" ;;
-    dion)   CONFIG="llama3_160m_dion" ;;
-    dion2)  CONFIG="llama3_160m_dion2" ;;
-    adamw)  CONFIG="llama3_160m_adamw" ;;
+    muon)    CONFIG="llama3_160m_muon" ;;
+    dion)    CONFIG="llama3_160m_dion" ;;
+    dion2)   CONFIG="llama3_160m_dion2" ;;
+    adamw)   CONFIG="llama3_160m_adamw" ;;
+    adadion) CONFIG="llama3_160m_adadion" ;;
     *)
         echo "Unknown optimizer: $OPTIMIZER"
-        echo "Options: muon, dion, dion2, adamw"
+        echo "Options: muon, dion, dion2, adamw, adadion"
         exit 1
         ;;
 esac

@@ -16,6 +16,7 @@ from typing import Optional
 import torch
 
 from dion import Muon, Dion, Dion2
+from ada_dion.optim import AdaDion
 
 
 class OptimizerMetricsCollector:
@@ -62,7 +63,17 @@ class OptimizerMetricsCollector:
             prefix = f"opt_{i}"
 
             # Identify optimizer type for logging
-            if isinstance(opt, Dion2):
+            if isinstance(opt, AdaDion):
+                metrics[f"{prefix}/type"] = "AdaDion"
+                for name, val in opt.get_anchor_drift().items():
+                    metrics[f"{prefix}/anchor_drift/{name}"] = val
+                for name, val in opt.get_tail_ratio().items():
+                    metrics[f"{prefix}/tail_ratio/{name}"] = val
+                for name, val in opt.get_rank().items():
+                    metrics[f"{prefix}/rank/{name}"] = val
+                for name, val in opt.get_energy_captured().items():
+                    metrics[f"{prefix}/energy/{name}"] = val
+            elif isinstance(opt, Dion2):
                 metrics[f"{prefix}/type"] = "Dion2"
             elif isinstance(opt, Dion):
                 metrics[f"{prefix}/type"] = "Dion"
