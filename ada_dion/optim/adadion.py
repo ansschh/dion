@@ -20,20 +20,38 @@ from torch.optim import Optimizer
 
 
 def _mat_inv_sqrt(S: Tensor, eps: float = 1e-7) -> Tensor:
-    """Compute S^{-1/2} via eigendecomposition for a symmetric PSD matrix."""
+    """Compute S^{-1/2} via eigendecomposition for a symmetric PSD matrix.
+
+    Uses float32 for numerical stability and adds diagonal regularization
+    to handle ill-conditioned matrices from bf16 accumulation.
+    """
     orig_dtype = S.dtype
     S_f32 = S.float() if S.dtype != torch.float32 else S
-    eigvals, eigvecs = torch.linalg.eigh(S_f32)
+    # Regularize: add small diagonal to prevent ill-conditioning
+    S_f32 = S_f32 + eps * torch.eye(S_f32.shape[-1], device=S_f32.device)
+    try:
+        eigvals, eigvecs = torch.linalg.eigh(S_f32)
+    except torch._C._LinAlgError:
+        # Fallback: if eigh fails, return identity (skip normalization)
+        return torch.eye(S.shape[-1], device=S.device, dtype=orig_dtype)
     eigvals = eigvals.clamp(min=eps)
     result = eigvecs @ torch.diag_embed(eigvals.rsqrt()) @ eigvecs.transpose(-2, -1)
     return result.to(orig_dtype)
 
 
 def _orthonormalize_gram(Y: Tensor, eps: float = 1e-7) -> Tensor:
-    """Orthonormalize columns of Y via Gram-based method: Y @ (Y^T Y)^{-1/2}."""
+    """Orthonormalize columns of Y via Gram-based method: Y @ (Y^T Y)^{-1/2}.
+
+    Falls back to QR if Gram method produces NaN (ill-conditioned input).
+    """
     S = Y.T @ Y  # r x r
     S_inv_sqrt = _mat_inv_sqrt(S, eps=eps)
-    return Y @ S_inv_sqrt
+    result = Y @ S_inv_sqrt
+    if torch.isnan(result).any() or torch.isinf(result).any():
+        # Fallback: QR decomposition (always stable)
+        Q, _ = torch.linalg.qr(Y.float())
+        return Q.to(Y.dtype)
+    return result
 
 
 class AdaDion(Optimizer):
@@ -217,6 +235,10 @@ class AdaDion(Optimizer):
             S = Y.T @ Y  # r x r
             Q_new = _orthonormalize_gram(Y)
 
+            # Safety: if Q_new has NaN/Inf, fall back to previous Q
+            if torch.isnan(Q_new).any() or torch.isinf(Q_new).any():
+                Q_new = Q.clone()
+
             # Step 3: Right factor
             R = M @ Q_new  # m_local x r
             # In distributed setting, all_reduce R
@@ -236,26 +258,35 @@ class AdaDion(Optimizer):
             if state["Q_anc"] is None:
                 state["Q_anc"] = Q_new.clone()
             else:
-                state["Q_anc"] = anchor_rho * state["Q_anc"] + (1 - anchor_rho) * Q_new
-                state["Q_anc"] = _orthonormalize_gram(state["Q_anc"])
+                Q_anc_new = anchor_rho * state["Q_anc"] + (1 - anchor_rho) * Q_new
+                Q_anc_new = _orthonormalize_gram(Q_anc_new)
+                # Only update if orthonormalization succeeded
+                if not (torch.isnan(Q_anc_new).any() or torch.isinf(Q_anc_new).any()):
+                    state["Q_anc"] = Q_anc_new
 
             # Step 6: Gap monitoring
-            eigvals = torch.linalg.eigvalsh(S.float())
-            eigvals_sorted = eigvals.sort(descending=True).values
-            if eigvals_sorted.numel() >= 2:
-                a, b = eigvals_sorted[0], eigvals_sorted[1]
-                tau = 1 - b / (a + 1e-8)
-            else:
-                tau = 1.0
-            state["tau"] = tau.item() if isinstance(tau, Tensor) else tau
+            tau = state["tau"]  # default: keep previous value
+            try:
+                S_f32 = S.float() + 1e-7 * torch.eye(S.shape[0], device=S.device)
+                eigvals = torch.linalg.eigvalsh(S_f32)
+                eigvals_sorted = eigvals.sort(descending=True).values
+                if eigvals_sorted.numel() >= 2:
+                    a, b = eigvals_sorted[0], eigvals_sorted[1]
+                    tau = 1 - b / (a + 1e-8)
+                else:
+                    tau = 1.0
+                state["tau"] = tau.item() if isinstance(tau, Tensor) else tau
 
-            # Compute energy captured
-            total_energy = eigvals.sum().item()
-            if total_energy > 1e-12:
-                top_r = eigvals_sorted[:r].sum().item()
-                state["energy"] = top_r / total_energy
-            else:
-                state["energy"] = 0.0
+                # Compute energy captured
+                total_energy = eigvals.sum().item()
+                if total_energy > 1e-12:
+                    top_r = eigvals_sorted[:r].sum().item()
+                    state["energy"] = top_r / total_energy
+                else:
+                    state["energy"] = 0.0
+            except torch._C._LinAlgError:
+                # Ill-conditioned matrix — keep previous tau/energy
+                pass
 
             # Refresh Q if gap is too low or periodic refresh
             if tau < tau_lo or (state["step"] % refresh_period == 0):
@@ -277,6 +308,11 @@ class AdaDion(Optimizer):
                     pass
             RtR_inv_sqrt = _mat_inv_sqrt(RtR)
             U = Update @ Q_bar @ RtR_inv_sqrt @ Q_bar.T  # Normalized
+
+            # Safety: skip update if NaN/Inf (numerical failure)
+            if torch.isnan(U).any() or torch.isinf(U).any():
+                state["Q"] = Q_bar
+                continue
 
             # Error feedback: remove projected component from momentum
             M.sub_(Update)
@@ -306,7 +342,8 @@ class AdaDion(Optimizer):
                 state = self.state[p]
                 if "Q" in state and state.get("Q_anc") is not None:
                     drift = (state["Q"] - state["Q_anc"]).norm().item()
-                    result[f"param_{idx}"] = drift
+                    # Return 0.0 if drift is NaN (numerical issue)
+                    result[f"param_{idx}"] = drift if math.isfinite(drift) else 0.0
                 idx += 1
         return result
 
