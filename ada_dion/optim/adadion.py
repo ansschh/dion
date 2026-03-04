@@ -21,9 +21,12 @@ from torch.optim import Optimizer
 
 def _mat_inv_sqrt(S: Tensor, eps: float = 1e-7) -> Tensor:
     """Compute S^{-1/2} via eigendecomposition for a symmetric PSD matrix."""
-    eigvals, eigvecs = torch.linalg.eigh(S)
+    orig_dtype = S.dtype
+    S_f32 = S.float() if S.dtype != torch.float32 else S
+    eigvals, eigvecs = torch.linalg.eigh(S_f32)
     eigvals = eigvals.clamp(min=eps)
-    return eigvecs @ torch.diag_embed(eigvals.rsqrt()) @ eigvecs.transpose(-2, -1)
+    result = eigvecs @ torch.diag_embed(eigvals.rsqrt()) @ eigvecs.transpose(-2, -1)
+    return result.to(orig_dtype)
 
 
 def _orthonormalize_gram(Y: Tensor, eps: float = 1e-7) -> Tensor:
@@ -237,7 +240,7 @@ class AdaDion(Optimizer):
                 state["Q_anc"] = _orthonormalize_gram(state["Q_anc"])
 
             # Step 6: Gap monitoring
-            eigvals = torch.linalg.eigvalsh(S)
+            eigvals = torch.linalg.eigvalsh(S.float())
             eigvals_sorted = eigvals.sort(descending=True).values
             if eigvals_sorted.numel() >= 2:
                 a, b = eigvals_sorted[0], eigvals_sorted[1]
