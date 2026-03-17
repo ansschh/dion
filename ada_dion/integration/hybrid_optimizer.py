@@ -31,8 +31,21 @@ from torch.optim import Optimizer
 from torchtitan.components.optimizer import OptimizersContainer
 from torchtitan.config import Configurable
 
+from torch.distributed.device_mesh import init_device_mesh
 from dion import Muon, Dion, Dion2
 from .param_grouper import group_params_for_hybrid
+
+
+def _get_device_mesh():
+    """Get or create a device mesh for distributed optimizers."""
+    try:
+        if torch.distributed.is_initialized():
+            world_size = torch.distributed.get_world_size()
+            if world_size > 1:
+                return init_device_mesh("cuda", (world_size,))
+    except Exception:
+        pass
+    return None
 
 
 class HybridOptimizersContainer(OptimizersContainer):
@@ -162,9 +175,11 @@ class HybridOptimizersContainer(OptimizersContainer):
     ) -> Optimizer:
         """Create the appropriate optimizer based on config.name."""
         name = config.name
+        mesh = _get_device_mesh()
         if name == "Muon":
             return Muon(
                 param_groups,
+                distributed_mesh=mesh,
                 lr=config.lr,
                 mu=config.mu,
                 weight_decay=config.weight_decay,
@@ -174,6 +189,7 @@ class HybridOptimizersContainer(OptimizersContainer):
         elif name == "Dion":
             return Dion(
                 param_groups,
+                distributed_mesh=mesh,
                 lr=config.lr,
                 rank_fraction=config.rank_fraction,
                 weight_decay=config.weight_decay,
@@ -181,6 +197,7 @@ class HybridOptimizersContainer(OptimizersContainer):
         elif name == "Dion2":
             return Dion2(
                 param_groups,
+                distributed_mesh=mesh,
                 lr=config.lr,
                 fraction=config.fraction,
                 ef_decay=config.ef_decay,
