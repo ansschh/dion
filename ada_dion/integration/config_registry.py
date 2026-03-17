@@ -29,8 +29,11 @@ from torchtitan.config import (
 from torchtitan.hf_datasets.text_datasets import HuggingFaceTextDataLoader
 from torchtitan.models.common import (
     compute_ffn_hidden_dim,
+    Embedding,
     FeedForward,
     GQAttention,
+    Linear,
+    RMSNorm,
     RoPE,
 )
 from torchtitan.models.llama3 import (
@@ -58,7 +61,12 @@ _LLAMA3_160M = Llama3Model.Config(
     dim=768,
     n_layers=12,
     vocab_size=128256,
+    tok_embeddings=Embedding.Config(),
+    norm=RMSNorm.Config(),
+    output=Linear.Config(),
     layer=Llama3TransformerBlock.Config(
+        attention_norm=RMSNorm.Config(),
+        ffn_norm=RMSNorm.Config(),
         feed_forward=FeedForward.Config(
             hidden_dim=compute_ffn_hidden_dim(768, multiple_of=256),
         ),
@@ -320,7 +328,12 @@ def llama3_debug_muon() -> Trainer.Config:
                 dim=256,
                 n_layers=6,
                 vocab_size=2048,
+                tok_embeddings=Embedding.Config(),
+                norm=RMSNorm.Config(),
+                output=Linear.Config(),
                 layer=Llama3TransformerBlock.Config(
+                    attention_norm=RMSNorm.Config(),
+                    ffn_norm=RMSNorm.Config(),
                     feed_forward=FeedForward.Config(
                         hidden_dim=compute_ffn_hidden_dim(256, multiple_of=256),
                     ),
