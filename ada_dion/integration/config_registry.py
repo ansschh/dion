@@ -138,6 +138,7 @@ def _base_metrics_config() -> MetricsProcessor.Config:
 def llama3_160m_adamw() -> Trainer.Config:
     """LLaMA3 160M with AdamW optimizer (baseline)."""
     return Trainer.Config(
+        hf_assets_path="./assets/hf/Meta-Llama-3.1-8B",
         model_spec=_model_registry_160m(),
         optimizer=OptimizersContainer.Config(
             name="AdamW",
@@ -173,6 +174,7 @@ def llama3_160m_adamw() -> Trainer.Config:
 def llama3_160m_muon() -> Trainer.Config:
     """LLaMA3 160M with Muon (Newton-Schulz) + AdamW scalar."""
     return Trainer.Config(
+        hf_assets_path="./assets/hf/Meta-Llama-3.1-8B",
         model_spec=_model_registry_160m(),
         optimizer=HybridOptimizersContainer.Config(
             name="Muon",
@@ -208,6 +210,7 @@ def llama3_160m_muon() -> Trainer.Config:
 def llama3_160m_dion() -> Trainer.Config:
     """LLaMA3 160M with Dion (low-rank power iteration) + AdamW scalar."""
     return Trainer.Config(
+        hf_assets_path="./assets/hf/Meta-Llama-3.1-8B",
         model_spec=_model_registry_160m(),
         optimizer=HybridOptimizersContainer.Config(
             name="Dion",
@@ -243,6 +246,7 @@ def llama3_160m_dion() -> Trainer.Config:
 def llama3_160m_dion2() -> Trainer.Config:
     """LLaMA3 160M with Dion2 (fraction selection + NS) + AdamW scalar."""
     return Trainer.Config(
+        hf_assets_path="./assets/hf/Meta-Llama-3.1-8B",
         model_spec=_model_registry_160m(),
         optimizer=HybridOptimizersContainer.Config(
             name="Dion2",
@@ -279,6 +283,7 @@ def llama3_160m_dion2() -> Trainer.Config:
 def llama3_160m_adadion() -> Trainer.Config:
     """LLaMA3 160M with AdaDion (adaptive low-rank + anchor) + AdamW scalar."""
     return Trainer.Config(
+        hf_assets_path="./assets/hf/Meta-Llama-3.1-8B",
         model_spec=_model_registry_160m(),
         optimizer=HybridOptimizersContainer.Config(
             name="AdaDion",
