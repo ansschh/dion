@@ -189,7 +189,7 @@ class HybridOptimizersContainer(OptimizersContainer):
         elif name == "Dion":
             return Dion(
                 param_groups,
-                distributed_mesh=mesh,
+                replicate_mesh=mesh,
                 lr=config.lr,
                 rank_fraction=config.rank_fraction,
                 weight_decay=config.weight_decay,
