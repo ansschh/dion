@@ -377,8 +377,8 @@ def _base_lr_scheduler_config_320m() -> LRSchedulersContainer.Config:
 
 def _base_training_config_320m() -> TrainingConfig:
     return TrainingConfig(
-        local_batch_size=32,
-        global_batch_size=256,  # 256 / (32 * 8_gpus) = 1 (no grad accum needed)
+        local_batch_size=8,
+        global_batch_size=256,  # 256 / (8 * 8_gpus) = 4 grad accum steps
         seq_len=2048,
         steps=6104,
         dtype="bfloat16",

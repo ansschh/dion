@@ -14,10 +14,10 @@ cd /workspace/ada-dion
 # ============================================================
 NGPU=8
 SEQ_LEN=2048
-# Matches Tatsu's setup exactly: dim=768, 18 layers, MHA
-# local_batch=32 fits on A100-80GB with dim=768 model
-LOCAL_BATCH_SIZE=32
-GLOBAL_BATCH_SIZE=256  # 32 * 8 = 256, no grad accum needed
+# Matches Tatsu's setup: dim=768, 18 layers, MHA
+# local_batch=8, global=256 → 4 grad accum steps (128K vocab OOMs at batch=32)
+LOCAL_BATCH_SIZE=8
+GLOBAL_BATCH_SIZE=256  # 256 / (8 * 8_gpus) = 4 grad accum
 TOKEN_BUDGET=3200000000
 TOKENS_PER_STEP=$((GLOBAL_BATCH_SIZE * SEQ_LEN))  # 524288
 STEPS=$(( (TOKEN_BUDGET + TOKENS_PER_STEP - 1) / TOKENS_PER_STEP ))  # 6104
