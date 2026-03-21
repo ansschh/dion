@@ -69,6 +69,13 @@ for LR in 0.005 0.01 0.02 0.05; do
 
         export WANDB_RUN_NAME="$RUN_NAME"
 
+        # Build adaptive-rank flag
+        if [ "$ADAPTIVE" = "true" ]; then
+            ADAPT_FLAG="--optimizer.adaptive-rank"
+        else
+            ADAPT_FLAG="--optimizer.no-adaptive-rank"
+        fi
+
         CMD=(
             torchrun
             --nproc_per_node="$NGPU"
@@ -81,21 +88,20 @@ for LR in 0.005 0.01 0.02 0.05; do
             --module "$MODULE"
             --config llama3_320m_adadion
             --training.steps "$STEPS"
-            --training.local_batch_size $LOCAL_BATCH_SIZE
-            --training.seq_len "$SEQ_LEN"
-            --training.seed "$SEED"
-            --hf_assets_path "$TOKENIZER_PATH"
+            --training.local-batch-size $LOCAL_BATCH_SIZE
+            --training.seq-len "$SEQ_LEN"
+            --hf-assets-path "$TOKENIZER_PATH"
             --optimizer.lr "$LR"
-            --optimizer.init_rank "$INIT_RANK"
-            --optimizer.adaptive_rank "$ADAPTIVE"
+            --optimizer.init-rank "$INIT_RANK"
+            $ADAPT_FLAG
             --optimizer.mu "$MU"
-            --parallelism.data_parallel_shard_degree "$NGPU"
-            --parallelism.data_parallel_replicate_degree 1
-            --metrics.enable_wandb
-            --metrics.enable_tensorboard
-            --metrics.log_freq 10
-            --activation_checkpoint.mode selective
-            --activation_checkpoint.selective_ac_option 2
+            --parallelism.data-parallel-shard-degree "$NGPU"
+            --parallelism.data-parallel-replicate-degree 1
+            --metrics.enable-wandb
+            --metrics.enable-tensorboard
+            --metrics.log-freq 10
+            --activation-checkpoint.mode selective
+            --activation-checkpoint.selective-ac-option 2
             --validator.freq 100
             --validator.steps 20
         )
