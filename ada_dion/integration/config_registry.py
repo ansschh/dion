@@ -102,6 +102,56 @@ def _model_registry_160m() -> ModelSpec:
 
 
 # ======================================================================
+# LLaMA3 320M model config
+# ======================================================================
+# ~320M params: dim=1024, n_layers=16, n_heads=16, n_kv_heads=4
+# hidden_dim ~= 2816 (via compute_ffn_hidden_dim with multiple_of=256)
+
+_LLAMA3_320M = Llama3Model.Config(
+    dim=1024,
+    n_layers=16,
+    vocab_size=128256,
+    tok_embeddings=Embedding.Config(),
+    norm=RMSNorm.Config(),
+    output=Linear.Config(),
+    layer=Llama3TransformerBlock.Config(
+        attention_norm=RMSNorm.Config(),
+        ffn_norm=RMSNorm.Config(),
+        feed_forward=FeedForward.Config(
+            hidden_dim=compute_ffn_hidden_dim(1024, multiple_of=256),
+        ),
+        attention=GQAttention.Config(
+            n_heads=16,
+            n_kv_heads=4,
+            attn_backend="sdpa",
+            rope_backend="complex",
+        ),
+    ),
+    rope=RoPE.Config(
+        dim=1024 // 16,  # head_dim = dim // n_heads = 64
+        max_seq_len=8192,
+        theta=500000,
+        backend="complex",
+        scaling="none",
+    ),
+)
+
+
+def _model_registry_320m() -> ModelSpec:
+    """Create a ModelSpec for LLaMA3 320M."""
+    return ModelSpec(
+        name="llama3",
+        flavor="320M",
+        model=_LLAMA3_320M,
+        parallelize_fn=parallelize_llama,
+        pipelining_fn=pipeline_llm,
+        build_loss_fn=build_cross_entropy_loss,
+        post_optimizer_build_fn=None,
+        state_dict_adapter=Llama3StateDictAdapter,
+    )
+
+
+# ======================================================================
 # Common training and scheduling configs
 # ======================================================================
 
@@ -310,6 +360,198 @@ def llama3_160m_adadion() -> Trainer.Config:
         validator=Validator.Config(
             freq=100,
             steps=20,
+        ),
+    )
+
+
+# ======================================================================
+# LLaMA3 320M optimizer configs
+# ======================================================================
+
+def _base_training_config_320m() -> TrainingConfig:
+    return TrainingConfig(
+        local_batch_size=64,
+        seq_len=2048,
+        steps=6104,
+        dtype="bfloat16",
+        max_norm=1.0,
+    )
+
+
+def llama3_320m_adamw() -> Trainer.Config:
+    """LLaMA3 320M with AdamW optimizer (baseline)."""
+    return Trainer.Config(
+        hf_assets_path="./assets/hf/Meta-Llama-3.1-8B",
+        model_spec=_model_registry_320m(),
+        optimizer=OptimizersContainer.Config(
+            name="AdamW",
+            lr=3e-4,
+            beta1=0.9,
+            beta2=0.95,
+            eps=1e-8,
+            weight_decay=0.1,
+        ),
+        lr_scheduler=_base_lr_scheduler_config(),
+        training=_base_training_config_320m(),
+        dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
+        metrics=_base_metrics_config(),
+        activation_checkpoint=ActivationCheckpointConfig(
+            mode="selective",
+            selective_ac_option="2",
+        ),
+        checkpoint=CheckpointManager.Config(
+            interval=1000,
+            last_save_model_only=True,
+        ),
+        validator=Validator.Config(
+            freq=100,
+            steps=20,
+        ),
+        parallelism=ParallelismConfig(
+            data_parallel_shard_degree=8,
+        ),
+    )
+
+
+def llama3_320m_muon() -> Trainer.Config:
+    """LLaMA3 320M with Muon (Newton-Schulz) + AdamW scalar."""
+    return Trainer.Config(
+        hf_assets_path="./assets/hf/Meta-Llama-3.1-8B",
+        model_spec=_model_registry_320m(),
+        optimizer=HybridOptimizersContainer.Config(
+            name="Muon",
+            lr=0.02,
+            mu=0.95,
+            weight_decay=0.0,
+            scalar_lr=3e-4,
+            scalar_weight_decay=0.01,
+        ),
+        lr_scheduler=_base_lr_scheduler_config(),
+        training=_base_training_config_320m(),
+        dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
+        metrics=_base_metrics_config(),
+        activation_checkpoint=ActivationCheckpointConfig(
+            mode="selective",
+            selective_ac_option="2",
+        ),
+        checkpoint=CheckpointManager.Config(
+            interval=1000,
+            last_save_model_only=True,
+        ),
+        validator=Validator.Config(
+            freq=100,
+            steps=20,
+        ),
+        parallelism=ParallelismConfig(
+            data_parallel_shard_degree=8,
+        ),
+    )
+
+
+def llama3_320m_dion() -> Trainer.Config:
+    """LLaMA3 320M with Dion (low-rank power iteration) + AdamW scalar."""
+    return Trainer.Config(
+        hf_assets_path="./assets/hf/Meta-Llama-3.1-8B",
+        model_spec=_model_registry_320m(),
+        optimizer=HybridOptimizersContainer.Config(
+            name="Dion",
+            lr=0.02,
+            rank_fraction=0.25,
+            weight_decay=0.0,
+            scalar_lr=3e-4,
+            scalar_weight_decay=0.01,
+        ),
+        lr_scheduler=_base_lr_scheduler_config(),
+        training=_base_training_config_320m(),
+        dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
+        metrics=_base_metrics_config(),
+        activation_checkpoint=ActivationCheckpointConfig(
+            mode="selective",
+            selective_ac_option="2",
+        ),
+        checkpoint=CheckpointManager.Config(
+            interval=1000,
+            last_save_model_only=True,
+        ),
+        validator=Validator.Config(
+            freq=100,
+            steps=20,
+        ),
+        parallelism=ParallelismConfig(
+            data_parallel_shard_degree=8,
+        ),
+    )
+
+
+def llama3_320m_dion2() -> Trainer.Config:
+    """LLaMA3 320M with Dion2 (fraction selection + NS) + AdamW scalar."""
+    return Trainer.Config(
+        hf_assets_path="./assets/hf/Meta-Llama-3.1-8B",
+        model_spec=_model_registry_320m(),
+        optimizer=HybridOptimizersContainer.Config(
+            name="Dion2",
+            lr=0.02,
+            fraction=0.25,
+            ef_decay=0.95,
+            weight_decay=0.0,
+            scalar_lr=3e-4,
+            scalar_weight_decay=0.01,
+        ),
+        lr_scheduler=_base_lr_scheduler_config(),
+        training=_base_training_config_320m(),
+        dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
+        metrics=_base_metrics_config(),
+        activation_checkpoint=ActivationCheckpointConfig(
+            mode="selective",
+            selective_ac_option="2",
+        ),
+        checkpoint=CheckpointManager.Config(
+            interval=1000,
+            last_save_model_only=True,
+        ),
+        validator=Validator.Config(
+            freq=100,
+            steps=20,
+        ),
+        parallelism=ParallelismConfig(
+            data_parallel_shard_degree=8,
+        ),
+    )
+
+
+def llama3_320m_adadion() -> Trainer.Config:
+    """LLaMA3 320M with AdaDion (adaptive low-rank) + AdamW scalar."""
+    return Trainer.Config(
+        hf_assets_path="./assets/hf/Meta-Llama-3.1-8B",
+        model_spec=_model_registry_320m(),
+        optimizer=HybridOptimizersContainer.Config(
+            name="AdaDion",
+            lr=0.02,
+            mu=0.95,
+            init_rank=64,
+            adaptive_rank=True,
+            weight_decay=0.0,
+            scalar_lr=3e-4,
+            scalar_weight_decay=0.01,
+        ),
+        lr_scheduler=_base_lr_scheduler_config(),
+        training=_base_training_config_320m(),
+        dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
+        metrics=_base_metrics_config(),
+        activation_checkpoint=ActivationCheckpointConfig(
+            mode="selective",
+            selective_ac_option="2",
+        ),
+        checkpoint=CheckpointManager.Config(
+            interval=1000,
+            last_save_model_only=True,
+        ),
+        validator=Validator.Config(
+            freq=100,
+            steps=20,
+        ),
+        parallelism=ParallelismConfig(
+            data_parallel_shard_degree=8,
         ),
     )
 
