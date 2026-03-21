@@ -377,8 +377,7 @@ def _base_lr_scheduler_config_320m() -> LRSchedulersContainer.Config:
 
 def _base_training_config_320m() -> TrainingConfig:
     return TrainingConfig(
-        local_batch_size=32,
-        global_batch_size=256,  # 32 * 8 = 256, no grad accum (compile fuses logit+loss)
+        local_batch_size=8,  # overridden by CLI --training.local-batch-size 32
         seq_len=2048,
         steps=6104,
         dtype="bfloat16",

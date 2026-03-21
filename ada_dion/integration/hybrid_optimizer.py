@@ -98,7 +98,7 @@ class HybridOptimizersContainer(OptimizersContainer):
         # --- Scalar optimizer (AdamW param groups) ---
         scalar_lr: float = 3e-4
         scalar_weight_decay: float = 0.01
-        scalar_beta1: float = 0.9
+        scalar_beta1: float = 0.95
         scalar_beta2: float = 0.95
         scalar_eps: float = 1e-8
 

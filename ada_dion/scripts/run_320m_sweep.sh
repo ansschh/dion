@@ -27,7 +27,7 @@ TOKENIZER_PATH="./assets/hf/Meta-Llama-3.1-8B"
 
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 export WANDB_API_KEY="${WANDB_API_KEY:?WANDB_API_KEY must be set}"
-export WANDB_PROJECT="ada-dion-320m-sweep"
+export WANDB_PROJECT="adadion-320m-hpsweep"
 export CC=gcc CXX=g++
 
 LOGDIR="logs/sweep_320m"
