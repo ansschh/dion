@@ -14,11 +14,16 @@ cd /workspace/ada-dion
 # ============================================================
 NGPU=8
 SEQ_LEN=2048
-GLOBAL_BATCH_SIZE=256
-LOCAL_BATCH_SIZE=$((GLOBAL_BATCH_SIZE / NGPU))  # 32
+# local_batch=4 fits in 80GB A100 with 320M model (128K vocab)
+# global_batch = 4 * 8 = 32, tokens/step = 32 * 2048 = 65536
+# 3.2B tokens / 65536 = 48828 steps — too many for a sweep
+# Use local_batch=4, ~3000 steps for sweep (enough to see convergence trends)
+LOCAL_BATCH_SIZE=4
+GLOBAL_BATCH_SIZE=$((LOCAL_BATCH_SIZE * NGPU))  # 32
 TOKEN_BUDGET=3200000000
-TOKENS_PER_STEP=$((GLOBAL_BATCH_SIZE * SEQ_LEN))  # 524288
-STEPS=$(( (TOKEN_BUDGET + TOKENS_PER_STEP - 1) / TOKENS_PER_STEP ))  # 6104
+TOKENS_PER_STEP=$((GLOBAL_BATCH_SIZE * SEQ_LEN))
+# For sweep, cap at 3000 steps to keep costs reasonable
+STEPS=3000
 SEED=0
 MODULE="ada_dion.integration.config_registry"
 TOKENIZER_PATH="./assets/hf/Meta-Llama-3.1-8B"
@@ -76,7 +81,7 @@ for LR in 0.005 0.01 0.02 0.05; do
             --module "$MODULE"
             --config llama3_320m_adadion
             --training.steps "$STEPS"
-            --training.local_batch_size "$LOCAL_BATCH_SIZE"
+            --training.local_batch_size $LOCAL_BATCH_SIZE
             --training.seq_len "$SEQ_LEN"
             --training.seed "$SEED"
             --hf_assets_path "$TOKENIZER_PATH"

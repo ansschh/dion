@@ -370,12 +370,11 @@ def llama3_160m_adadion() -> Trainer.Config:
 
 def _base_training_config_320m() -> TrainingConfig:
     return TrainingConfig(
-        local_batch_size=8,
+        local_batch_size=4,
         seq_len=2048,
         steps=6104,
         dtype="bfloat16",
         max_norm=1.0,
-        gradient_accumulation_steps=4,  # effective local_batch=32, global=256 on 8 GPUs
     )
 
 
