@@ -15,9 +15,9 @@ cd /workspace/ada-dion
 NGPU=8
 SEQ_LEN=2048
 # Matches Tatsu's setup: dim=768, 18 layers, MHA
-# local_batch=8, global=256 → 4 grad accum steps (128K vocab OOMs at batch=32)
-LOCAL_BATCH_SIZE=8
-GLOBAL_BATCH_SIZE=256  # 256 / (8 * 8_gpus) = 4 grad accum
+# local_batch=32 works with torch.compile (fuses logit+loss, avoids 31GB tensor)
+LOCAL_BATCH_SIZE=32
+GLOBAL_BATCH_SIZE=256  # 32 * 8 = 256, no grad accum
 TOKEN_BUDGET=3200000000
 TOKENS_PER_STEP=$((GLOBAL_BATCH_SIZE * SEQ_LEN))  # 524288
 STEPS=$(( (TOKEN_BUDGET + TOKENS_PER_STEP - 1) / TOKENS_PER_STEP ))  # 6104
@@ -48,6 +48,11 @@ echo "============================================================"
 # ============================================================
 # Sweep configs
 # ============================================================
+# Support running a subset: START_IDX and END_IDX (1-indexed, default all 48)
+START_IDX=${START_IDX:-1}
+END_IDX=${END_IDX:-48}
+echo "  Running configs $START_IDX to $END_IDX"
+
 RUN_IDX=0
 FAILED=0
 
@@ -57,6 +62,10 @@ for LR in 0.005 0.01 0.02 0.05; do
     for ADAPTIVE in true false; do
       for MU in 0.9 0.95; do
         RUN_IDX=$((RUN_IDX + 1))
+        # Skip configs outside the requested range
+        if [ "$RUN_IDX" -lt "$START_IDX" ] || [ "$RUN_IDX" -gt "$END_IDX" ]; then
+            continue
+        fi
         RUN_NAME="adadion_320m_lr${LR}_r${INIT_RANK}_adapt${ADAPTIVE}_mu${MU}"
         RUN_LOG_DIR="$LOGDIR/$RUN_NAME"
         mkdir -p "$RUN_LOG_DIR"
@@ -100,6 +109,7 @@ for LR in 0.005 0.01 0.02 0.05; do
             --metrics.log-freq 10
             --activation-checkpoint.mode selective
             --activation-checkpoint.selective-ac-option 2
+            --compile.enable
             --validator.freq 100
             --validator.steps 20
         )
