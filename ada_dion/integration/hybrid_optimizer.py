@@ -77,11 +77,23 @@ class HybridOptimizersContainer(OptimizersContainer):
         ef_decay: float = 0.95
 
         # --- AdaDion-specific ---
-        anchor_lambda: float = 0.1
-        anchor_rho: float = 0.99
-        tau_hi: float = 0.8
-        tau_lo: float = 0.3
-        refresh_period: int = 100
+        init_rank: int = 64
+        adaptive_rank: bool = True
+        erank_ema_beta: float = 0.9
+        rho: float = 1.5
+        rank_min: int = 16
+        rank_max: int = 256
+        rank_quantize: int = 8
+        rank_warmup_steps: int = 10
+        warmup_rank: int = 128
+        rank_step_up: int = 16
+        rank_step_down: int = 8
+        use_quality_control: bool = True
+        aerr_ema_beta: float = 0.95
+        aerr_target: float = 0.08
+        aerr_up_margin: float = 0.15
+        aerr_down_margin: float = 0.15
+        qbuf_max_cols: int = 256
 
         # --- Scalar optimizer (AdamW param groups) ---
         scalar_lr: float = 3e-4
@@ -207,15 +219,27 @@ class HybridOptimizersContainer(OptimizersContainer):
             from ada_dion.optim import AdaDion
             return AdaDion(
                 param_groups,
+                device_mesh=mesh,
                 lr=config.lr,
                 mu=config.mu,
-                rank_fraction=config.rank_fraction,
-                anchor_lambda=config.anchor_lambda,
-                anchor_rho=config.anchor_rho,
-                tau_hi=config.tau_hi,
-                tau_lo=config.tau_lo,
+                init_rank=config.init_rank,
+                adaptive_rank=config.adaptive_rank,
+                erank_ema_beta=config.erank_ema_beta,
+                rho=config.rho,
+                rank_min=config.rank_min,
+                rank_max=config.rank_max,
+                rank_quantize=config.rank_quantize,
+                rank_warmup_steps=config.rank_warmup_steps,
+                warmup_rank=config.warmup_rank,
+                rank_step_up=config.rank_step_up,
+                rank_step_down=config.rank_step_down,
+                use_quality_control=config.use_quality_control,
+                aerr_ema_beta=config.aerr_ema_beta,
+                aerr_target=config.aerr_target,
+                aerr_up_margin=config.aerr_up_margin,
+                aerr_down_margin=config.aerr_down_margin,
+                qbuf_max_cols=config.qbuf_max_cols,
                 weight_decay=config.weight_decay,
-                refresh_period=config.refresh_period,
             )
         else:
             raise ValueError(

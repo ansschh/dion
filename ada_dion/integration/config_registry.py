@@ -281,7 +281,7 @@ def llama3_160m_dion2() -> Trainer.Config:
 # ======================================================================
 
 def llama3_160m_adadion() -> Trainer.Config:
-    """LLaMA3 160M with AdaDion (adaptive low-rank + anchor) + AdamW scalar."""
+    """LLaMA3 160M with AdaDion (adaptive low-rank) + AdamW scalar."""
     return Trainer.Config(
         hf_assets_path="./assets/hf/Meta-Llama-3.1-8B",
         model_spec=_model_registry_160m(),
@@ -289,12 +289,8 @@ def llama3_160m_adadion() -> Trainer.Config:
             name="AdaDion",
             lr=0.02,
             mu=0.95,
-            rank_fraction=0.25,
-            anchor_lambda=0.1,
-            anchor_rho=0.99,
-            tau_hi=0.8,
-            tau_lo=0.3,
-            refresh_period=100,
+            init_rank=64,
+            adaptive_rank=True,
             weight_decay=0.0,
             scalar_lr=3e-4,
             scalar_weight_decay=0.01,
@@ -411,12 +407,8 @@ def llama3_debug_adadion() -> Trainer.Config:
         name="AdaDion",
         lr=0.02,
         mu=0.95,
-        rank_fraction=0.25,
-        anchor_lambda=0.1,
-        anchor_rho=0.99,
-        tau_hi=0.8,
-        tau_lo=0.3,
-        refresh_period=100,
+        init_rank=64,
+        adaptive_rank=True,
         weight_decay=0.0,
         scalar_lr=3e-4,
         scalar_weight_decay=0.01,

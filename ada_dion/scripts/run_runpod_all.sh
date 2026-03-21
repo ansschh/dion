@@ -7,7 +7,8 @@ cd /workspace/ada-dion
 
 export NGPU=4
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
-export WANDB_MODE="${WANDB_MODE:-disabled}"
+export WANDB_API_KEY="${WANDB_API_KEY:?WANDB_API_KEY must be set}"
+export WANDB_MODE=online
 
 LOGDIR="logs"
 mkdir -p "$LOGDIR"
