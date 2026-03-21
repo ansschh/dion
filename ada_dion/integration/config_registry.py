@@ -104,12 +104,12 @@ def _model_registry_160m() -> ModelSpec:
 # ======================================================================
 # LLaMA3 320M model config
 # ======================================================================
-# ~320M params: dim=1024, n_layers=16, n_heads=16, n_kv_heads=4
-# hidden_dim ~= 2816 (via compute_ffn_hidden_dim with multiple_of=256)
+# ~324M params: dim=768, n_layers=18, n_heads=12 (MHA, no GQA)
+# hidden_dim = 2048 (matches Tatsu's ortho_matrix setup exactly)
 
 _LLAMA3_320M = Llama3Model.Config(
-    dim=1024,
-    n_layers=16,
+    dim=768,
+    n_layers=18,
     vocab_size=128256,
     tok_embeddings=Embedding.Config(),
     norm=RMSNorm.Config(),
@@ -118,17 +118,16 @@ _LLAMA3_320M = Llama3Model.Config(
         attention_norm=RMSNorm.Config(),
         ffn_norm=RMSNorm.Config(),
         feed_forward=FeedForward.Config(
-            hidden_dim=compute_ffn_hidden_dim(1024, multiple_of=256),
+            hidden_dim=compute_ffn_hidden_dim(768, multiple_of=256),
         ),
         attention=GQAttention.Config(
-            n_heads=16,
-            n_kv_heads=4,
+            n_heads=12,
             attn_backend="sdpa",
             rope_backend="complex",
         ),
     ),
     rope=RoPE.Config(
-        dim=1024 // 16,  # head_dim = dim // n_heads = 64
+        dim=768 // 12,  # head_dim = 64
         max_seq_len=8192,
         theta=500000,
         backend="complex",
@@ -368,10 +367,18 @@ def llama3_160m_adadion() -> Trainer.Config:
 # LLaMA3 320M optimizer configs
 # ======================================================================
 
+def _base_lr_scheduler_config_320m() -> LRSchedulersContainer.Config:
+    return LRSchedulersContainer.Config(
+        warmup_steps=610,
+        decay_type="cosine",
+        min_lr_factor=0.0,
+    )
+
+
 def _base_training_config_320m() -> TrainingConfig:
     return TrainingConfig(
-        local_batch_size=4,
-        global_batch_size=256,  # grad accum = 256 / (4 * 8_gpus) = 8
+        local_batch_size=32,
+        global_batch_size=256,  # 256 / (32 * 8_gpus) = 1 (no grad accum needed)
         seq_len=2048,
         steps=6104,
         dtype="bfloat16",
@@ -386,13 +393,13 @@ def llama3_320m_adamw() -> Trainer.Config:
         model_spec=_model_registry_320m(),
         optimizer=OptimizersContainer.Config(
             name="AdamW",
-            lr=3e-4,
-            beta1=0.9,
+            lr=0.008,
+            beta1=0.95,
             beta2=0.95,
             eps=1e-8,
             weight_decay=0.1,
         ),
-        lr_scheduler=_base_lr_scheduler_config(),
+        lr_scheduler=_base_lr_scheduler_config_320m(),
         training=_base_training_config_320m(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
@@ -427,7 +434,7 @@ def llama3_320m_muon() -> Trainer.Config:
             scalar_lr=3e-4,
             scalar_weight_decay=0.01,
         ),
-        lr_scheduler=_base_lr_scheduler_config(),
+        lr_scheduler=_base_lr_scheduler_config_320m(),
         training=_base_training_config_320m(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
@@ -462,7 +469,7 @@ def llama3_320m_dion() -> Trainer.Config:
             scalar_lr=3e-4,
             scalar_weight_decay=0.01,
         ),
-        lr_scheduler=_base_lr_scheduler_config(),
+        lr_scheduler=_base_lr_scheduler_config_320m(),
         training=_base_training_config_320m(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
@@ -498,7 +505,7 @@ def llama3_320m_dion2() -> Trainer.Config:
             scalar_lr=3e-4,
             scalar_weight_decay=0.01,
         ),
-        lr_scheduler=_base_lr_scheduler_config(),
+        lr_scheduler=_base_lr_scheduler_config_320m(),
         training=_base_training_config_320m(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
@@ -535,7 +542,7 @@ def llama3_320m_adadion() -> Trainer.Config:
             scalar_lr=3e-4,
             scalar_weight_decay=0.01,
         ),
-        lr_scheduler=_base_lr_scheduler_config(),
+        lr_scheduler=_base_lr_scheduler_config_320m(),
         training=_base_training_config_320m(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
