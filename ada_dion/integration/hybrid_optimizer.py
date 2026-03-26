@@ -93,6 +93,11 @@ class HybridOptimizersContainer(OptimizersContainer):
         aerr_target: float = 0.08
         aerr_up_margin: float = 0.15
         aerr_down_margin: float = 0.15
+        # --- Anchor regularization ---
+        use_anchor: bool = True
+        anchor_lambda: float = 0.1
+        anchor_rho: float = 0.99
+        anchor_warmup_steps: int = 0
         qbuf_max_cols: int = 256
 
         # --- Scalar optimizer (AdamW param groups) ---
@@ -238,6 +243,10 @@ class HybridOptimizersContainer(OptimizersContainer):
                 aerr_target=config.aerr_target,
                 aerr_up_margin=config.aerr_up_margin,
                 aerr_down_margin=config.aerr_down_margin,
+                use_anchor=config.use_anchor,
+                anchor_lambda=config.anchor_lambda,
+                anchor_rho=config.anchor_rho,
+                anchor_warmup_steps=config.anchor_warmup_steps,
                 qbuf_max_cols=config.qbuf_max_cols,
                 weight_decay=config.weight_decay,
             )

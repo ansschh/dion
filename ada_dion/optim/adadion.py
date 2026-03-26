@@ -1,5 +1,6 @@
 """
-AdaDion: Adaptive Rank Control for Distributed Orthonormalized Updates.
+AdaDion: Adaptive Rank Control for Distributed Orthonormalized Updates
+      + Anchor Regularization for subspace stability.
 
 Aligned with the working DionSim reference implementation. Supports FSDP2/DTensor.
 
@@ -7,6 +8,8 @@ Algorithm overview:
   - Error feedback buffer: B = M + grad
   - Power iteration with transpose handling (m<=n vs m>n)
   - Distributed Cholesky QR orthonormalization
+  - Anchor regularization: Q_mixed = (1-λ)Q_new + λ*Q_anc (stabilizes subspace)
+  - Anchor EMA update: Q_anc = ρ*Q_anc + (1-ρ)*Q_new
   - Error feedback: M = B - (1 - mu) * approx
   - Weight update: p -= lr * sqrt(dmin/dmax) * update
   - Adaptive rank via effective rank EMA + quality control
@@ -81,13 +84,19 @@ def _fix_nan(U: Tensor, W: Tensor, V_prev: Tensor) -> tuple[Tensor, Tensor, bool
 
 class AdaDion(Optimizer):
     """
-    AdaDion optimizer: Dion with adaptive rank selection.
+    AdaDion optimizer: Dion with adaptive rank selection + anchor regularization.
 
     For matrix parameters (2D), implements the Dion algorithm with
-    adaptive rank selection matching the working DionSim reference.
+    adaptive rank selection and anchor subspace stabilization.
 
     For scalar parameters (1D, embeddings, norms), routes to AdamW
     when ``algorithm="adamw"`` is set in the param group.
+
+    Anchor regularization:
+      After each power iteration, Q_new is blended with a slowly-moving
+      anchor subspace Q_anc before computing the weight update. This prevents
+      the subspace basis from changing too abruptly between steps, improving
+      training stability especially in the early phase.
     """
 
     def __init__(
@@ -113,6 +122,11 @@ class AdaDion(Optimizer):
         aerr_target: float = 0.08,
         aerr_up_margin: float = 0.15,
         aerr_down_margin: float = 0.15,
+        # --- Anchor regularization ---
+        use_anchor: bool = True,
+        anchor_lambda: float = 0.1,
+        anchor_rho: float = 0.99,
+        anchor_warmup_steps: int = 0,
         # --- Other ---
         qbuf_max_cols: int = 256,
         weight_decay: float = 0.0,
@@ -140,6 +154,10 @@ class AdaDion(Optimizer):
             aerr_target=aerr_target,
             aerr_up_margin=aerr_up_margin,
             aerr_down_margin=aerr_down_margin,
+            use_anchor=use_anchor,
+            anchor_lambda=anchor_lambda,
+            anchor_rho=anchor_rho,
+            anchor_warmup_steps=anchor_warmup_steps,
             qbuf_max_cols=qbuf_max_cols,
             weight_decay=weight_decay,
             adamw_betas=adamw_betas,
@@ -181,6 +199,74 @@ class AdaDion(Optimizer):
             dist.all_reduce(t, group=self._process_group)
         elif self._device_mesh is None and dist.is_initialized():
             dist.all_reduce(t)
+
+    def _apply_anchor(
+        self, Q_new: Tensor, state: dict, r: int, transpose: bool,
+        anchor_lambda: float, anchor_rho: float, step: int,
+        anchor_warmup_steps: int,
+    ) -> Tensor:
+        """Apply anchor mixing to Q_new and update the anchor EMA.
+
+        Args:
+            Q_new: Current subspace basis (n, r) or (m_local, r).
+            state: Optimizer state dict for this parameter.
+            r: Current rank.
+            transpose: Whether this is the m>n branch.
+            anchor_lambda: Mixing weight (0=no anchor, 1=pure anchor).
+            anchor_rho: EMA decay for anchor update.
+            step: Current optimizer step.
+            anchor_warmup_steps: Steps before anchor mixing activates.
+
+        Returns:
+            Q_mixed: Anchor-blended subspace basis, same shape as Q_new.
+        """
+        dim0 = Q_new.shape[0]
+        Q_anc = state.get("Q_anc")
+
+        # Initialize anchor on first call
+        if Q_anc is None:
+            state["Q_anc"] = Q_new.clone()
+            return Q_new
+
+        # Slice anchor to current rank (rank may have changed adaptively)
+        anc_r = min(r, Q_anc.shape[1])
+        if anc_r < r:
+            # Anchor has fewer columns than current rank — expand with Q_new cols
+            expanded = torch.zeros(dim0, r, device=Q_new.device, dtype=Q_new.dtype)
+            expanded[:, :anc_r] = Q_anc[:dim0, :anc_r]
+            expanded[:, anc_r:] = Q_new[:, anc_r:]
+            state["Q_anc"] = expanded
+            Q_anc = expanded
+            anc_slice = Q_anc[:dim0, :r]
+        elif Q_anc.shape[0] < dim0:
+            # Anchor dim0 is smaller (shouldn't happen, but guard)
+            state["Q_anc"] = Q_new.clone()
+            return Q_new
+        else:
+            anc_slice = Q_anc[:dim0, :r]
+
+        # Anchor mixing: blend Q_new with Q_anc
+        if step > anchor_warmup_steps and anchor_lambda > 0:
+            Q_mixed = (1.0 - anchor_lambda) * Q_new + anchor_lambda * anc_slice
+            # Re-normalize columns
+            if not transpose:
+                Q_mixed = _col_normalize(Q_mixed)
+            else:
+                Q_mixed = _col_normalize_distributed(Q_mixed, self._process_group)
+        else:
+            Q_mixed = Q_new
+
+        # Update anchor via EMA: Q_anc = ρ*Q_anc + (1-ρ)*Q_new
+        anc_slice.mul_(anchor_rho).add_(Q_new, alpha=1.0 - anchor_rho)
+        # Re-normalize anchor columns for stability
+        if not transpose:
+            state["Q_anc"][:dim0, :r] = _col_normalize(anc_slice)
+        else:
+            state["Q_anc"][:dim0, :r] = _col_normalize_distributed(
+                anc_slice, self._process_group
+            )
+
+        return Q_mixed
 
     # ------------------------------------------------------------------
     # Step dispatch
@@ -241,7 +327,7 @@ class AdaDion(Optimizer):
             p.data.addcdiv_(exp_avg, denom, value=-step_size)
 
     # ------------------------------------------------------------------
-    # AdaDion update (matching working DionSim reference)
+    # AdaDion update (Dion + adaptive rank + anchor regularization)
     # ------------------------------------------------------------------
 
     def _step_adadion(self, group: dict) -> None:
@@ -263,6 +349,10 @@ class AdaDion(Optimizer):
         aerr_target = group["aerr_target"]
         aerr_up_margin = group["aerr_up_margin"]
         aerr_down_margin = group["aerr_down_margin"]
+        use_anchor = group["use_anchor"]
+        anchor_lambda = group["anchor_lambda"]
+        anchor_rho_val = group["anchor_rho"]
+        anchor_warmup = group["anchor_warmup_steps"]
         qbuf_max_cols = group["qbuf_max_cols"]
         weight_decay = group["weight_decay"]
 
@@ -350,6 +440,7 @@ class AdaDion(Optimizer):
                 state["transpose"] = transpose
                 state["erank_ema"] = None
                 state["aerr_ema"] = None
+                state["Q_anc"] = None  # anchor subspace (initialized on first use)
                 state["step"] = 0
 
             state["step"] += 1
@@ -396,6 +487,17 @@ class AdaDion(Optimizer):
 
                 approx = P_orth @ R.T          # (m_local, n)
                 Q_new = _col_normalize(R)      # (n, r) replicated
+
+                # --- Anchor regularization ---
+                if use_anchor:
+                    Q_new = self._apply_anchor(
+                        Q_new, state, r, transpose=False,
+                        anchor_lambda=anchor_lambda,
+                        anchor_rho=anchor_rho_val,
+                        step=state["step"],
+                        anchor_warmup_steps=anchor_warmup,
+                    )
+
                 update = P_orth @ Q_new.T      # (m_local, n)
                 Qbuf[:n, :r].copy_(Q_new)
 
@@ -415,14 +517,23 @@ class AdaDion(Optimizer):
                 approx = R @ P_orth.T          # (m_local, n) sharded
                 # R is sharded along dim=0: need global column norms
                 Q_new = _col_normalize_distributed(R, self._process_group)
+
+                # --- Anchor regularization ---
+                if use_anchor:
+                    Q_new = self._apply_anchor(
+                        Q_new, state, r, transpose=True,
+                        anchor_lambda=anchor_lambda,
+                        anchor_rho=anchor_rho_val,
+                        step=state["step"],
+                        anchor_warmup_steps=anchor_warmup,
+                    )
+
                 update = Q_new @ P_orth.T      # (m_local, n) sharded
                 Qbuf[:m_local, :r].copy_(Q_new)
 
             # --- NaN/Inf recovery ---
-            # Check update for NaN (covers both branches)
             if torch.isnan(update).any() or torch.isinf(update).any():
                 update = torch.zeros_like(update)
-                # Don't update Qbuf (already copied, but that's ok — next step re-computes)
 
             # --- Error feedback: M = B - (1 - mu) * approx ---
             M.copy_(B - (1.0 - mu) * approx)
@@ -601,5 +712,37 @@ class AdaDion(Optimizer):
                 state = self.state[p]
                 if "aerr_ema" in state and state["aerr_ema"] is not None:
                     result[f"param_{idx}"] = state["aerr_ema"]
+                idx += 1
+        return result
+
+    def get_anchor_drift(self) -> dict[str, float]:
+        """Return ||Q - Q_anc||_F per matrix parameter.
+
+        Measures how far the current subspace has drifted from the anchor.
+        Low drift = stable subspace. High drift = rapidly changing basis.
+        """
+        result = {}
+        idx = 0
+        for group in self.param_groups:
+            if group.get("algorithm") == "adamw":
+                continue
+            for p in group["params"]:
+                if not self._is_matrix_param(p):
+                    continue
+                state = self.state[p]
+                if "Qbuf" in state and state.get("Q_anc") is not None:
+                    r = state.get("r", 0)
+                    transpose = state.get("transpose", False)
+                    Qbuf = state["Qbuf"]
+                    Q_anc = state["Q_anc"]
+                    if transpose:
+                        Q_cur = Qbuf[:Qbuf.shape[0], :r]
+                        Q_a = Q_anc[:Q_anc.shape[0], :r]
+                    else:
+                        Q_cur = Qbuf[:Qbuf.shape[0], :r]
+                        Q_a = Q_anc[:Q_anc.shape[0], :r]
+                    if Q_cur.shape == Q_a.shape:
+                        drift = (Q_cur - Q_a).norm().item()
+                        result[f"param_{idx}"] = drift if math.isfinite(drift) else 0.0
                 idx += 1
         return result
