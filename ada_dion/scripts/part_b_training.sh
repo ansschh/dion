@@ -16,6 +16,7 @@ LOGDIR="logs/part_b"
 INIT_RANK=64
 
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+export LD_LIBRARY_PATH=/usr/local/lib/python3.11/dist-packages/nvidia/cu13/lib:${LD_LIBRARY_PATH:-}
 export WANDB_API_KEY="${WANDB_API_KEY:?WANDB_API_KEY must be set}"
 export WANDB_PROJECT="gsdion-validation"
 export CC=gcc CXX=g++
