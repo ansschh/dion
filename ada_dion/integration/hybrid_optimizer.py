@@ -229,8 +229,8 @@ class HybridOptimizersContainer(OptimizersContainer):
                 weight_decay=config.weight_decay,
             )
         elif name == "AdaDion":
-            from ada_dion.optim.gsdion import GSDion
-            return GSDion(
+            from ada_dion.optim.agdion import AGDion
+            return AGDion(
                 param_groups,
                 device_mesh=mesh,
                 lr=config.lr,
@@ -238,18 +238,8 @@ class HybridOptimizersContainer(OptimizersContainer):
                 init_rank=config.init_rank,
                 rank_min=config.rank_min,
                 rank_max=config.rank_max,
-                rank_quantize=config.rank_quantize,
-                rank_normalize=config.rank_normalize,
-                use_adaptive_scalar=config.use_adaptive_scalar,
-                scalar_beta=config.scalar_beta,
-                scalar_rho=config.scalar_rho,
-                scalar_gamma=config.scalar_gamma,
-                use_rms_matching=config.use_rms_matching,
-                use_trust_region=config.use_trust_region,
-                use_residual_rank=config.use_residual_rank,
                 use_anchor=config.use_anchor,
                 anchor_alpha=config.anchor_alpha,
-                anchor_period=config.anchor_period,
                 qbuf_max_cols=config.qbuf_max_cols,
                 weight_decay=config.weight_decay,
             )
