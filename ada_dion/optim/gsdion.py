@@ -1,25 +1,28 @@
 """
 GSDion — Guarded Scale-Dion.
 
-Dion's low-rank power iteration with four safeguards that address the
-implicit step-size bug in adaptive-rank Dion (||D_t||_F = sqrt(r_t)):
+Dion's low-rank power iteration with safeguards addressing the implicit
+step-size bug (||D_t||_F = sqrt(r_t)):
 
-  1. Rank normalization:  D_t / sqrt(r_t)
-  2. Adaptive scalar:    s_t = 1/sqrt(EMA(RMS(G)^2) + eps)   (AdaGO/NAMO)
-  3. RMS matching + trust-region clipping:
-       c_t = RMS(M_t) / (RMS(D_t) + eps)
-       q_t = ||M - proj||_F / (||M||_F + eps)       (residual quality)
+  1. Rank normalization:  D_t / sqrt(r_t)  →  ||D_t||_F = 1
+  2. Adaptive scalar:     bias-corrected, bounded relative scalar around 1
+       v_t = beta2 * v_{t-1} + (1-beta2) * RMS(G)^2
+       v_hat = v_t / (1 - beta2^t)             (bias correction)
+       s_raw = 1 / sqrt(v_hat + eps)
+       s_t = clip(s_raw / s_ref, s_min, s_max)  (bounded around 1)
+  3. RMS matching + trust-region:
+       c_t = RMS(M) / (RMS(D_norm) + eps)
+       q_t = ||M - proj||_F / (||M||_F + eps)   (residual quality)
        alpha_t = min(1, tau / (q_t + eps))
-  4. Residual-driven rank control with hysteresis:
-       increase fast when q_t > tau_up
-       decrease slowly after K consecutive steps of q_t < tau_down
-  5. Periodic refresh every P steps or on q_t spike
-  6. Optional MuonEq pre-balance: row/col equilibration before power step
-  7. Anchor (H2): cached global basis, penalize drift
+  4. Residual-driven rank with hysteresis
+  5. Periodic refresh
+  6. Optional MuonEq pre-balance
+  7. Anchor (H2)
 
-Each feature is independently toggleable.
+Each feature independently toggleable. FSDP2/DTensor compatible.
 
-Base distributed infra: Cholesky QR, transpose handling, FSDP2/DTensor.
+Key diagnostic: the full scalar m_t = lr * ss * alpha_t * c_t * s_t and
+||delta_W||_F are logged per layer per step.
 """
 from __future__ import annotations
 
@@ -61,7 +64,6 @@ def _rms(t, eps=1e-12):
 
 
 def _rms_dist(t, pg, eps=1e-12):
-    """RMS over all shards (all-reduce sum-of-squares and count)."""
     ss = t.float().pow(2).sum()
     n = torch.tensor(t.numel(), device=t.device, dtype=torch.float32)
     if pg is not None:
@@ -89,6 +91,9 @@ class GSDion(Optimizer):
         rank_normalize: bool = True,
         use_adaptive_scalar: bool = True,
         scalar_beta2: float = 0.999,
+        scalar_min: float = 0.5,
+        scalar_max: float = 2.0,
+        use_rms_matching: bool = True,
         use_trust_region: bool = True,
         trust_tau: float = 1.0,
         use_residual_rank: bool = True,
@@ -119,6 +124,8 @@ class GSDion(Optimizer):
             rank_min=rank_min, rank_max=rank_max, rank_quantize=rank_quantize,
             rank_normalize=rank_normalize,
             use_adaptive_scalar=use_adaptive_scalar, scalar_beta2=scalar_beta2,
+            scalar_min=scalar_min, scalar_max=scalar_max,
+            use_rms_matching=use_rms_matching,
             use_trust_region=use_trust_region, trust_tau=trust_tau,
             use_residual_rank=use_residual_rank,
             tau_up=tau_up, tau_down=tau_down, hysteresis_k=hysteresis_k,
@@ -133,7 +140,6 @@ class GSDion(Optimizer):
         self._mesh = device_mesh
         self._pg = device_mesh.get_group() if device_mesh else None
 
-    # -- helpers --
     def _is_mat(self, p): return p.ndim == 2 and min(p.shape) >= 2
     def _loc(self, t): return t._local_tensor if isinstance(t, DTensor) else t
     def _fshape(self, p): return tuple(p.shape)
@@ -144,7 +150,6 @@ class GSDion(Optimizer):
         if self._pg: dist.all_reduce(t, group=self._pg)
         elif self._mesh is None and dist.is_initialized(): dist.all_reduce(t)
 
-    # -- step --
     @torch.no_grad()
     def step(self, closure=None):
         loss = None
@@ -176,6 +181,8 @@ class GSDion(Optimizer):
         init_rank = g["init_rank"]; rmin = g["rank_min"]; rmax = g["rank_max"]; rq = g["rank_quantize"]
         do_rnorm = g["rank_normalize"]
         do_scalar = g["use_adaptive_scalar"]; sb2 = g["scalar_beta2"]
+        s_lo, s_hi = g["scalar_min"], g["scalar_max"]
+        do_rms = g["use_rms_matching"]
         do_tr = g["use_trust_region"]; tr_tau = g["trust_tau"]
         do_resrank = g["use_residual_rank"]
         tau_up = g["tau_up"]; tau_dn = g["tau_down"]; hyst_k = g["hysteresis_k"]
@@ -199,7 +206,6 @@ class GSDion(Optimizer):
             rc = min(dmin, rmax)
             if rc <= 0: continue
 
-            # -- init --
             if len(st) == 0:
                 tr = mf > n
                 bc = min(rc, qmax)
@@ -216,9 +222,10 @@ class GSDion(Optimizer):
                     "M": torch.zeros_like(pl), "Qbuf": Qbuf,
                     "r": int(max(1, min(max(re, ir), rc, bc))),
                     "tr": tr, "step": 0,
-                    "v_scalar": 0.0,         # EMA of RMS(grad)^2
-                    "q_ema": 0.1,            # residual quality EMA
-                    "good_streak": 0,        # consecutive steps with q < tau_down
+                    "v_scalar": 0.0,
+                    "s_ref": None,
+                    "q_ema": 0.1,
+                    "good_streak": 0,
                     "Q_anchor": None,
                 })
                 if do_prebal:
@@ -228,34 +235,40 @@ class GSDion(Optimizer):
             st["step"] += 1
             M = st["M"]; Qbuf = st["Qbuf"]; r = st["r"]; tr = st["tr"]; dt = M.dtype
             re = int(max(1, min(rmin, rc, Qbuf.shape[1])))
-            r = int(min(max(re, r), Qbuf.shape[1], rc))
+            r = int(min(max(re, r if do_resrank else init_rank), Qbuf.shape[1], rc))
 
-            # -- Feature 6: MuonEq pre-balance --
+            # -- pre-balance (MuonEq) --
             if do_prebal:
-                row_sq = grad.float().pow(2).sum(dim=1)  # (ml,)
-                col_sq = grad.float().pow(2).sum(dim=0)  # (n,)
+                row_sq = grad.float().pow(2).sum(dim=1)
+                col_sq = grad.float().pow(2).sum(dim=0)
                 self._ar(col_sq)
-                if tr:
-                    self._ar(row_sq)
+                if tr: self._ar(row_sq)
                 st["Dr_ema"].mul_(bal_beta).add_(row_sq, alpha=1 - bal_beta)
                 st["Dc_ema"].mul_(bal_beta).add_(col_sq, alpha=1 - bal_beta)
                 Dr_inv = st["Dr_ema"].clamp(min=1e-12).rsqrt()
                 Dc_inv = st["Dc_ema"].clamp(min=1e-12).rsqrt()
-                grad_bal = (grad.float() * Dr_inv.unsqueeze(1) * Dc_inv.unsqueeze(0)).to(dt)
+                grad_used = (grad.float() * Dr_inv.unsqueeze(1) * Dc_inv.unsqueeze(0)).to(dt)
             else:
-                grad_bal = grad
+                grad_used = grad
 
-            # -- Feature 2: track RMS(grad) for adaptive scalar --
+            # -- adaptive scalar: track RMS(grad) with bias correction --
+            grad_rms = (_rms_dist(grad, self._pg) if tr else _rms(grad)).item()
             if do_scalar:
-                g_rms = _rms_dist(grad, self._pg).item() if tr else _rms(grad).item()
-                st["v_scalar"] = sb2 * st["v_scalar"] + (1 - sb2) * (g_rms ** 2)
-                s_t = 1.0 / math.sqrt(st["v_scalar"] + 1e-8)
+                st["v_scalar"] = sb2 * st["v_scalar"] + (1 - sb2) * (grad_rms ** 2)
+                v_hat = st["v_scalar"] / (1 - sb2 ** st["step"])  # bias correction
+                s_raw = 1.0 / math.sqrt(v_hat + 1e-8)
+                # set reference on first step
+                if st["s_ref"] is None:
+                    st["s_ref"] = s_raw
+                # bounded relative scalar around 1
+                s_rel = s_raw / st["s_ref"]
+                s_t = max(s_lo, min(s_hi, s_rel))
             else:
-                s_t = 1.0
+                s_t = 1.0; s_raw = 1.0
 
             # -- momentum + B --
-            M.mul_(mu).add_(grad_bal)
-            B = M + grad_bal
+            M.mul_(mu).add_(grad_used)
+            B = M + grad_used
 
             # -- power iteration + Cholesky QR --
             if not tr:
@@ -273,12 +286,10 @@ class GSDion(Optimizer):
                 R = (B.float().T @ Po).to(dt); self._ar(R)
                 approx = Pd @ R.T
                 Qnew = _col_norm(R)
-
                 if do_anc and st["Q_anchor"] is not None and anc_alpha > 0:
                     ar = min(r, st["Q_anchor"].shape[1])
                     Qnew[:, :ar] = (1 - anc_alpha) * Qnew[:, :ar] + anc_alpha * st["Q_anchor"][:n, :ar]
                     Qnew = _col_norm(Qnew)
-
                 D_raw = Pd @ Qnew.T
                 Qbuf[:n, :r].copy_(Qnew)
             else:
@@ -289,55 +300,63 @@ class GSDion(Optimizer):
                 R = B @ Pd
                 approx = R @ Pd.T
                 Qnew = _col_norm_dist(R, self._pg)
-
                 if do_anc and st["Q_anchor"] is not None and anc_alpha > 0:
                     ar = min(r, st["Q_anchor"].shape[1])
                     Qnew[:, :ar] = (1 - anc_alpha) * Qnew[:, :ar] + anc_alpha * st["Q_anchor"][:ml, :ar]
                     Qnew = _col_norm_dist(Qnew, self._pg)
-
                 D_raw = Qnew @ Pd.T
                 Qbuf[:ml, :r].copy_(Qnew)
 
-            # -- NaN guard --
             if torch.isnan(D_raw).any() or torch.isinf(D_raw).any():
                 D_raw = torch.zeros_like(D_raw)
 
-            # -- residual quality metric --
+            # -- residual quality --
             resid_sq = (B - approx).float().pow(2).sum()
             denom_sq = B.float().pow(2).sum()
             self._ar(resid_sq); self._ar(denom_sq)
             q_t = (resid_sq.sqrt() / (denom_sq.sqrt() + 1e-12)).item()
             st["q_ema"] = 0.95 * st["q_ema"] + 0.05 * q_t
 
-            # -- Feature 1: rank normalization --
+            # -- rank normalization --
             if do_rnorm and r > 0:
-                D = D_raw / math.sqrt(r)
+                D_norm = D_raw / math.sqrt(r)
             else:
-                D = D_raw
+                D_norm = D_raw
 
-            # -- Feature 3: RMS matching + trust-region clipping --
-            if do_tr:
-                rms_M = _rms_dist(M, self._pg) if tr else _rms(M)
-                rms_D = _rms_dist(D, self._pg) if tr else _rms(D)
-                c_t = (rms_M / rms_D).item()
-                alpha_t = min(1.0, tr_tau / (q_t + 1e-12))
-                scale = alpha_t * c_t * s_t
+            # -- RMS matching --
+            if do_rms:
+                rms_M = (_rms_dist(M, self._pg) if tr else _rms(M)).item()
+                rms_D = (_rms_dist(D_norm, self._pg) if tr else _rms(D_norm)).item()
+                c_t = rms_M / (rms_D + 1e-12)
             else:
-                c_t = 1.0; alpha_t = 1.0
-                scale = s_t
+                c_t = 1.0
+
+            # -- trust-region clipping --
+            if do_tr:
+                alpha_t = min(1.0, tr_tau / (q_t + 1e-12))
+            else:
+                alpha_t = 1.0
+
+            # -- final multiplier --
+            m_t = alpha_t * c_t * s_t
+
+            # -- compute actual delta_W for logging --
+            delta_W = D_norm * (lr * ss * m_t)
+            dw_fro = delta_W.float().norm().item()
+            dw_rms = _rms(delta_W).item()
 
             # -- error feedback --
             M.copy_(B - (1.0 - mu) * approx)
 
             # -- weight update --
             if wd: pl.mul_(1 - lr * wd)
-            pl.add_(D, alpha=-(lr * ss * scale))
+            pl.add_(D_norm, alpha=-(lr * ss * m_t))
 
             # -- anchor refresh --
             if do_anc and (st["step"] % anc_per == 0 or st["Q_anchor"] is None):
                 st["Q_anchor"] = Qbuf.clone()
 
-            # -- Feature 5: periodic refresh --
+            # -- periodic refresh --
             do_refresh = (st["step"] % ref_period == 0) or (q_t > ref_spike)
             if do_refresh and st["step"] > rwarm_steps:
                 gen = torch.Generator(device=pl.device)
@@ -346,21 +365,17 @@ class GSDion(Optimizer):
                 Qbuf[:, :r].copy_(F.normalize(
                     torch.randn(d0, r, device=pl.device, dtype=dt, generator=gen), dim=0))
 
-            # -- Feature 4: residual-driven rank with hysteresis --
+            # -- residual-driven rank --
             if do_resrank and st["step"] > rwarm_steps:
                 if q_t > tau_up:
                     st["good_streak"] = 0
                     r_next = min(r * 2, rc, Qbuf.shape[1])
                 elif q_t < tau_dn:
                     st["good_streak"] += 1
-                    if st["good_streak"] >= hyst_k:
-                        r_next = max(r // 2, re)
-                        st["good_streak"] = 0
-                    else:
-                        r_next = r
+                    r_next = max(r // 2, re) if st["good_streak"] >= hyst_k else r
+                    if st["good_streak"] >= hyst_k: st["good_streak"] = 0
                 else:
-                    st["good_streak"] = 0
-                    r_next = r
+                    st["good_streak"] = 0; r_next = r
                 r_next = _qint(min(max(re, r_next), rc, Qbuf.shape[1]), rq)
                 r_next = int(min(max(re, r_next), rc, Qbuf.shape[1]))
                 if r_next > r:
@@ -369,56 +384,46 @@ class GSDion(Optimizer):
                         torch.randn(d0, r_next - r, device=pl.device, dtype=dt), dim=0))
                 st["r"] = r_next
             elif st["step"] <= rwarm_steps:
-                des = int(min(rwarm_rank, rc, Qbuf.shape[1]))
-                des = max(re, des)
+                des = max(re, int(min(rwarm_rank, rc, Qbuf.shape[1])))
                 if des > r:
                     d0 = Qbuf.shape[0]
                     Qbuf[:, r:des].copy_(F.normalize(
                         torch.randn(d0, des - r, device=pl.device, dtype=dt), dim=0))
                 st["r"] = des
 
-            # -- store diagnostics --
+            # -- store all diagnostics --
             st["_q_t"] = q_t
             st["_s_t"] = s_t
+            st["_s_raw"] = s_raw
             st["_c_t"] = c_t
             st["_alpha_t"] = alpha_t
-            st["_scale"] = scale
-            st["_update_rms"] = _rms(D).item()
-            st["_grad_rms"] = _rms(grad).item()
+            st["_m_t"] = m_t
+            st["_dw_fro"] = dw_fro
+            st["_dw_rms"] = dw_rms
+            st["_grad_rms"] = grad_rms
+            st["_update_rms"] = _rms(D_norm).item()
 
     # -- diagnostics --
+    def get_diagnostics(self):
+        out, i = {}, 0
+        for g in self.param_groups:
+            if g.get("algorithm") == "adamw": continue
+            for p in g["params"]:
+                if not self._is_mat(p): continue
+                st = self.state[p]
+                pf = f"p{i}"
+                for k in ["r", "_q_t", "_s_t", "_s_raw", "_c_t", "_alpha_t", "_m_t",
+                           "_dw_fro", "_dw_rms", "_grad_rms", "_update_rms", "q_ema"]:
+                    if k in st: out[f"{pf}/{k.lstrip('_')}"] = st[k]
+                i += 1
+        return out
+
     def get_rank(self):
         out, i = {}, 0
         for g in self.param_groups:
             if g.get("algorithm") == "adamw": continue
             for p in g["params"]:
                 if self._is_mat(p) and "r" in self.state[p]: out[f"p{i}"] = self.state[p]["r"]
-                i += 1
-        return out
-
-    def get_residual_quality(self):
-        out, i = {}, 0
-        for g in self.param_groups:
-            if g.get("algorithm") == "adamw": continue
-            for p in g["params"]:
-                if self._is_mat(p) and "_q_t" in self.state[p]: out[f"p{i}"] = self.state[p]["_q_t"]
-                i += 1
-        return out
-
-    def get_diagnostics(self):
-        """Return all per-param diagnostics as a flat dict for logging."""
-        out = {}
-        i = 0
-        for g in self.param_groups:
-            if g.get("algorithm") == "adamw": continue
-            for p in g["params"]:
-                if not self._is_mat(p): continue
-                st = self.state[p]
-                prefix = f"p{i}"
-                for k in ["r", "_q_t", "_s_t", "_c_t", "_alpha_t", "_scale", "_update_rms", "_grad_rms", "q_ema"]:
-                    if k in st:
-                        clean_k = k.lstrip("_")
-                        out[f"{prefix}/{clean_k}"] = st[k]
                 i += 1
         return out
 
@@ -439,7 +444,6 @@ class GSDion(Optimizer):
                 i += 1
         return out
 
-    # -- checkpoint --
     def state_dict(self):
         sd = super().state_dict()
         if self._ws() > 1: sd["_gsdion_ws"] = self._ws()
