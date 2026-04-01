@@ -73,7 +73,6 @@ _LLAMA3_160M = Llama3Model.Config(
         attention=GQAttention.Config(
             n_heads=12,
             n_kv_heads=4,
-            attn_backend="sdpa",
             rope_backend="complex",
         ),
     ),
@@ -122,7 +121,6 @@ _LLAMA3_320M = Llama3Model.Config(
         ),
         attention=GQAttention.Config(
             n_heads=12,
-            attn_backend="sdpa",
             rope_backend="complex",
         ),
     ),
