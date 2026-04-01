@@ -96,14 +96,9 @@ for cfg_str in "${CONFIGS[@]}"; do
       --parallelism.data-parallel-replicate-degree 1
       --compile.enable
       --activation-checkpoint.mode selective
-      --activation-checkpoint.selective-ac-option 2
       --metrics.enable-wandb
       --metrics.enable-tensorboard
       --metrics.log-freq 10
-      --validator.enable
-      --validator.freq 100
-      --validator.steps 20
-      --debug.seed $SEED
     )
 
     if "${CMD[@]}" 2>&1 | tee "$RUN_LOG/train.log"; then

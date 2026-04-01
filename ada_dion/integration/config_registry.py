@@ -199,10 +199,7 @@ def llama3_160m_adamw() -> Trainer.Config:
         training=_base_training_config(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
-        activation_checkpoint=ActivationCheckpointConfig(
-            mode="selective",
-            selective_ac_option="2",
-        ),
+        activation_checkpoint=ActivationCheckpointConfig(),
         checkpoint=CheckpointManager.Config(
             interval=1000,
             last_save_model_only=True,
@@ -235,10 +232,7 @@ def llama3_160m_muon() -> Trainer.Config:
         training=_base_training_config(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
-        activation_checkpoint=ActivationCheckpointConfig(
-            mode="selective",
-            selective_ac_option="2",
-        ),
+        activation_checkpoint=ActivationCheckpointConfig(),
         checkpoint=CheckpointManager.Config(
             interval=1000,
             last_save_model_only=True,
@@ -271,10 +265,7 @@ def llama3_160m_dion() -> Trainer.Config:
         training=_base_training_config(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
-        activation_checkpoint=ActivationCheckpointConfig(
-            mode="selective",
-            selective_ac_option="2",
-        ),
+        activation_checkpoint=ActivationCheckpointConfig(),
         checkpoint=CheckpointManager.Config(
             interval=1000,
             last_save_model_only=True,
@@ -308,10 +299,7 @@ def llama3_160m_dion2() -> Trainer.Config:
         training=_base_training_config(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
-        activation_checkpoint=ActivationCheckpointConfig(
-            mode="selective",
-            selective_ac_option="2",
-        ),
+        activation_checkpoint=ActivationCheckpointConfig(),
         checkpoint=CheckpointManager.Config(
             interval=1000,
             last_save_model_only=True,
@@ -346,10 +334,7 @@ def llama3_160m_adadion() -> Trainer.Config:
         training=_base_training_config(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
-        activation_checkpoint=ActivationCheckpointConfig(
-            mode="selective",
-            selective_ac_option="2",
-        ),
+        activation_checkpoint=ActivationCheckpointConfig(),
         checkpoint=CheckpointManager.Config(
             interval=1000,
             last_save_model_only=True,
@@ -400,10 +385,7 @@ def llama3_320m_adamw() -> Trainer.Config:
         training=_base_training_config_320m(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
-        activation_checkpoint=ActivationCheckpointConfig(
-            mode="selective",
-            selective_ac_option="2",
-        ),
+        activation_checkpoint=ActivationCheckpointConfig(),
         checkpoint=CheckpointManager.Config(
             interval=1000,
             last_save_model_only=True,
@@ -435,10 +417,7 @@ def llama3_320m_muon() -> Trainer.Config:
         training=_base_training_config_320m(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
-        activation_checkpoint=ActivationCheckpointConfig(
-            mode="selective",
-            selective_ac_option="2",
-        ),
+        activation_checkpoint=ActivationCheckpointConfig(),
         checkpoint=CheckpointManager.Config(
             interval=1000,
             last_save_model_only=True,
@@ -470,10 +449,7 @@ def llama3_320m_dion() -> Trainer.Config:
         training=_base_training_config_320m(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
-        activation_checkpoint=ActivationCheckpointConfig(
-            mode="selective",
-            selective_ac_option="2",
-        ),
+        activation_checkpoint=ActivationCheckpointConfig(),
         checkpoint=CheckpointManager.Config(
             interval=1000,
             last_save_model_only=True,
@@ -506,10 +482,7 @@ def llama3_320m_dion2() -> Trainer.Config:
         training=_base_training_config_320m(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
-        activation_checkpoint=ActivationCheckpointConfig(
-            mode="selective",
-            selective_ac_option="2",
-        ),
+        activation_checkpoint=ActivationCheckpointConfig(),
         checkpoint=CheckpointManager.Config(
             interval=1000,
             last_save_model_only=True,
@@ -543,10 +516,7 @@ def llama3_320m_adadion() -> Trainer.Config:
         training=_base_training_config_320m(),
         dataloader=HuggingFaceTextDataLoader.Config(dataset="c4_test"),
         metrics=_base_metrics_config(),
-        activation_checkpoint=ActivationCheckpointConfig(
-            mode="selective",
-            selective_ac_option="2",
-        ),
+        activation_checkpoint=ActivationCheckpointConfig(),
         checkpoint=CheckpointManager.Config(
             interval=1000,
             last_save_model_only=True,
