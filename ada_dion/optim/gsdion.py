@@ -90,9 +90,9 @@ class GSDion(Optimizer):
         # feature flags
         rank_normalize: bool = True,
         use_adaptive_scalar: bool = True,
-        scalar_beta2: float = 0.999,
-        scalar_min: float = 0.5,
-        scalar_max: float = 2.0,
+        scalar_beta: float = 0.99,
+        scalar_rho: float = 0.3,
+        scalar_gamma: float = 1.2,
         use_rms_matching: bool = True,
         use_trust_region: bool = True,
         trust_tau: float = 1.0,
@@ -123,8 +123,8 @@ class GSDion(Optimizer):
             lr=lr, mu=mu, init_rank=init_rank,
             rank_min=rank_min, rank_max=rank_max, rank_quantize=rank_quantize,
             rank_normalize=rank_normalize,
-            use_adaptive_scalar=use_adaptive_scalar, scalar_beta2=scalar_beta2,
-            scalar_min=scalar_min, scalar_max=scalar_max,
+            use_adaptive_scalar=use_adaptive_scalar,
+            scalar_beta=scalar_beta, scalar_rho=scalar_rho, scalar_gamma=scalar_gamma,
             use_rms_matching=use_rms_matching,
             use_trust_region=use_trust_region, trust_tau=trust_tau,
             use_residual_rank=use_residual_rank,
@@ -180,8 +180,8 @@ class GSDion(Optimizer):
         lr = g["lr"]; mu = g["mu"]
         init_rank = g["init_rank"]; rmin = g["rank_min"]; rmax = g["rank_max"]; rq = g["rank_quantize"]
         do_rnorm = g["rank_normalize"]
-        do_scalar = g["use_adaptive_scalar"]; sb2 = g["scalar_beta2"]
-        s_lo, s_hi = g["scalar_min"], g["scalar_max"]
+        do_scalar = g["use_adaptive_scalar"]
+        sc_beta = g["scalar_beta"]; sc_rho = g["scalar_rho"]; sc_gamma = g["scalar_gamma"]
         do_rms = g["use_rms_matching"]
         do_tr = g["use_trust_region"]; tr_tau = g["trust_tau"]
         do_resrank = g["use_residual_rank"]
@@ -222,8 +222,7 @@ class GSDion(Optimizer):
                     "M": torch.zeros_like(pl), "Qbuf": Qbuf,
                     "r": int(max(1, min(max(re, ir), rc, bc))),
                     "tr": tr, "step": 0,
-                    "v_scalar": 0.0,
-                    "s_ref": None,
+                    "log_rms_ema": None,
                     "q_ema": 0.1,
                     "good_streak": 0,
                     "Q_anchor": None,
@@ -251,18 +250,23 @@ class GSDion(Optimizer):
             else:
                 grad_used = grad
 
-            # -- adaptive scalar: track RMS(grad) with bias correction --
+            # -- centered relative scalar --
+            # s_t reacts to deviations from recent RMS history, not absolute scale.
+            #   log_g = log(RMS(G) + eps)
+            #   ℓ_t   = beta * ℓ_{t-1} + (1-beta) * log_g       (EMA of log-RMS)
+            #   s_t   = clip(exp(-rho * (log_g - ℓ_t)), [1/gamma, gamma])
+            # When gradient RMS is near its running average: s_t ≈ 1
+            # Only reacts to deviations, cannot become a giant amplifier.
             grad_rms = (_rms_dist(grad, self._pg) if tr else _rms(grad)).item()
             if do_scalar:
-                st["v_scalar"] = sb2 * st["v_scalar"] + (1 - sb2) * (grad_rms ** 2)
-                v_hat = st["v_scalar"] / (1 - sb2 ** st["step"])  # bias correction
-                s_raw = 1.0 / math.sqrt(v_hat + 1e-8)
-                # set reference on first step
-                if st["s_ref"] is None:
-                    st["s_ref"] = s_raw
-                # bounded relative scalar around 1
-                s_rel = s_raw / st["s_ref"]
-                s_t = max(s_lo, min(s_hi, s_rel))
+                log_g = math.log(grad_rms + 1e-12)
+                if st["log_rms_ema"] is None:
+                    st["log_rms_ema"] = log_g
+                else:
+                    st["log_rms_ema"] = sc_beta * st["log_rms_ema"] + (1 - sc_beta) * log_g
+                deviation = log_g - st["log_rms_ema"]
+                s_raw = math.exp(-sc_rho * deviation)
+                s_t = max(1.0 / sc_gamma, min(sc_gamma, s_raw))
             else:
                 s_t = 1.0; s_raw = 1.0
 
