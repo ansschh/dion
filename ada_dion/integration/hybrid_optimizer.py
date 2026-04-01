@@ -97,6 +97,15 @@ class HybridOptimizersContainer(OptimizersContainer):
         use_anchor: bool = True
         anchor_alpha: float = 0.1
         anchor_period: int = 50
+        # --- GSDion scale control ---
+        rank_normalize: bool = False
+        use_adaptive_scalar: bool = False
+        scalar_beta: float = 0.99
+        scalar_rho: float = 0.3
+        scalar_gamma: float = 1.2
+        use_rms_matching: bool = False
+        use_trust_region: bool = False
+        use_residual_rank: bool = False
         qbuf_max_cols: int = 256
 
         # --- Scalar optimizer (AdamW param groups) ---
@@ -220,28 +229,24 @@ class HybridOptimizersContainer(OptimizersContainer):
                 weight_decay=config.weight_decay,
             )
         elif name == "AdaDion":
-            from ada_dion.optim import AdaDion
-            return AdaDion(
+            from ada_dion.optim.gsdion import GSDion
+            return GSDion(
                 param_groups,
                 device_mesh=mesh,
                 lr=config.lr,
                 mu=config.mu,
                 init_rank=config.init_rank,
-                adaptive_rank=config.adaptive_rank,
-                erank_ema_beta=config.erank_ema_beta,
-                rho=config.rho,
                 rank_min=config.rank_min,
                 rank_max=config.rank_max,
                 rank_quantize=config.rank_quantize,
-                rank_warmup_steps=config.rank_warmup_steps,
-                warmup_rank=config.warmup_rank,
-                rank_step_up=config.rank_step_up,
-                rank_step_down=config.rank_step_down,
-                use_quality_control=config.use_quality_control,
-                aerr_ema_beta=config.aerr_ema_beta,
-                aerr_target=config.aerr_target,
-                aerr_up_margin=config.aerr_up_margin,
-                aerr_down_margin=config.aerr_down_margin,
+                rank_normalize=config.rank_normalize,
+                use_adaptive_scalar=config.use_adaptive_scalar,
+                scalar_beta=config.scalar_beta,
+                scalar_rho=config.scalar_rho,
+                scalar_gamma=config.scalar_gamma,
+                use_rms_matching=config.use_rms_matching,
+                use_trust_region=config.use_trust_region,
+                use_residual_rank=config.use_residual_rank,
                 use_anchor=config.use_anchor,
                 anchor_alpha=config.anchor_alpha,
                 anchor_period=config.anchor_period,
