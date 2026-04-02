@@ -97,15 +97,12 @@ class HybridOptimizersContainer(OptimizersContainer):
         use_anchor: bool = True
         anchor_alpha: float = 0.1
         anchor_period: int = 50
-        # --- GSDion scale control ---
-        rank_normalize: bool = False
-        use_adaptive_scalar: bool = False
-        scalar_beta: float = 0.99
-        scalar_rho: float = 0.3
-        scalar_gamma: float = 1.2
-        use_rms_matching: bool = False
-        use_trust_region: bool = False
-        use_residual_rank: bool = False
+        # --- SDion mode ---
+        # "baseline" = plain Dion (no skip)
+        # "skip" = skip-only
+        # "skip_consensus" = skip + consensus
+        # "skip_cons_anchor" = skip + consensus + decaying anchor
+        sdion_mode: str = "baseline"
         qbuf_max_cols: int = 256
 
         # --- Scalar optimizer (AdamW param groups) ---
@@ -230,6 +227,13 @@ class HybridOptimizersContainer(OptimizersContainer):
             )
         elif name == "AdaDion":
             from ada_dion.optim.sdion import SDion
+            mode = config.sdion_mode
+            mode_kw = {
+                "baseline":        dict(enable_skip=False, enable_consensus=False, enable_anchor=False, enable_recovery=False),
+                "skip":            dict(enable_skip=True, enable_consensus=False, enable_anchor=False, enable_recovery=True),
+                "skip_consensus":  dict(enable_skip=True, enable_consensus=True, enable_anchor=False, enable_recovery=True),
+                "skip_cons_anchor": dict(enable_skip=True, enable_consensus=True, enable_anchor=True, enable_recovery=True),
+            }.get(mode, {})
             return SDion(
                 param_groups,
                 device_mesh=mesh,
@@ -240,6 +244,7 @@ class HybridOptimizersContainer(OptimizersContainer):
                 rank_max=config.rank_max,
                 qbuf_max_cols=config.qbuf_max_cols,
                 weight_decay=config.weight_decay,
+                **mode_kw,
             )
         else:
             raise ValueError(

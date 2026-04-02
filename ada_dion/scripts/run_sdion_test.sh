@@ -43,16 +43,16 @@ SEEDS=(42 123)
 # enable_anchor=True, enable_recovery=True
 # We override via CLI flags
 
-# Config array: name|enable_skip|enable_consensus|enable_anchor
+# Config array: name|sdion_mode
 CONFIGS=(
-  "dion_baseline|false|false|false"
-  "skip_only|true|false|false"
-  "skip_consensus|true|true|false"
-  "skip_cons_anchor|true|true|true"
+  "dion_baseline|baseline"
+  "skip_only|skip"
+  "skip_consensus|skip_consensus"
+  "skip_cons_anchor|skip_cons_anchor"
 )
 
 for cfg_str in "${CONFIGS[@]}"; do
-  IFS='|' read -r CFG_NAME DO_SKIP DO_CONS DO_ANC <<< "$cfg_str"
+  IFS='|' read -r CFG_NAME SDION_MODE <<< "$cfg_str"
   for SEED in "${SEEDS[@]}"; do
     RUN_IDX=$((RUN_IDX + 1))
     RUN_NAME="${CFG_NAME}_s${SEED}"
@@ -60,17 +60,8 @@ for cfg_str in "${CONFIGS[@]}"; do
     mkdir -p "$RUN_LOG"
 
     echo ""
-    echo "--- [$RUN_IDX/8] $RUN_NAME ---"
+    echo "--- [$RUN_IDX/8] $RUN_NAME (mode=$SDION_MODE) ---"
     export WANDB_RUN_NAME="$RUN_NAME"
-
-    SKIP_FLAG="--optimizer.no-enable-skip"
-    [ "$DO_SKIP" = "true" ] && SKIP_FLAG="--optimizer.enable-skip"
-
-    CONS_FLAG="--optimizer.no-enable-consensus"
-    [ "$DO_CONS" = "true" ] && CONS_FLAG="--optimizer.enable-consensus"
-
-    ANC_FLAG="--optimizer.no-enable-anchor"
-    [ "$DO_ANC" = "true" ] && ANC_FLAG="--optimizer.enable-anchor"
 
     CMD=(
       torchrun
@@ -90,10 +81,7 @@ for cfg_str in "${CONFIGS[@]}"; do
       --hf-assets-path "$TOKENIZER"
       --optimizer.lr 0.02
       --optimizer.init-rank 64
-      $SKIP_FLAG
-      $CONS_FLAG
-      $ANC_FLAG
-      --optimizer.enable-recovery
+      --optimizer.sdion-mode "$SDION_MODE"
       --parallelism.data-parallel-shard-degree $NGPU
       --parallelism.data-parallel-replicate-degree 1
       --compile.enable
