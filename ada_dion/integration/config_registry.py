@@ -68,7 +68,10 @@ _LLAMA3_160M = Llama3Model.Config(
         attention_norm=RMSNorm.Config(),
         ffn_norm=RMSNorm.Config(),
         feed_forward=FeedForward.Config(
+            dim=768,
             hidden_dim=compute_ffn_hidden_dim(768, multiple_of=256),
+            w1=Linear.Config(),
+            w2w3=Linear.Config(),
         ),
         attention=GQAttention.Config(
             n_heads=12,
@@ -117,7 +120,10 @@ _LLAMA3_320M = Llama3Model.Config(
         attention_norm=RMSNorm.Config(),
         ffn_norm=RMSNorm.Config(),
         feed_forward=FeedForward.Config(
+            dim=768,
             hidden_dim=compute_ffn_hidden_dim(768, multiple_of=256),
+            w1=Linear.Config(),
+            w2w3=Linear.Config(),
         ),
         attention=GQAttention.Config(
             n_heads=12,
@@ -553,11 +559,13 @@ def llama3_debug_muon() -> Trainer.Config:
                     attention_norm=RMSNorm.Config(),
                     ffn_norm=RMSNorm.Config(),
                     feed_forward=FeedForward.Config(
+                        dim=256,
                         hidden_dim=compute_ffn_hidden_dim(256, multiple_of=256),
+                        w1=Linear.Config(),
+                        w2w3=Linear.Config(),
                     ),
                     attention=GQAttention.Config(
                         n_heads=16,
-                        attn_backend="sdpa",
                         rope_backend="complex",
                     ),
                 ),
