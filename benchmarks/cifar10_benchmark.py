@@ -104,22 +104,65 @@ def get_dataloaders(batch_size, world_size, rank):
     return train_dl, test_dl, sampler
 
 # ---------------------------------------------------------------------------
-# Model
+# Model — Small ViT (mostly 2D Linear layers, good for Dion)
 # ---------------------------------------------------------------------------
+class PatchEmbed(nn.Module):
+    def __init__(self, img_size=32, patch_size=4, in_ch=3, embed_dim=256):
+        super().__init__()
+        self.n_patches = (img_size // patch_size) ** 2
+        self.proj = nn.Conv2d(in_ch, embed_dim, patch_size, patch_size)
+    def forward(self, x):
+        return self.proj(x).flatten(2).transpose(1, 2)
+
+class MLP(nn.Module):
+    def __init__(self, dim, hidden):
+        super().__init__()
+        self.fc1 = nn.Linear(dim, hidden)
+        self.fc2 = nn.Linear(hidden, dim)
+    def forward(self, x):
+        return self.fc2(torch.nn.functional.gelu(self.fc1(x)))
+
+class Block(nn.Module):
+    def __init__(self, dim, heads):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(dim)
+        self.attn = nn.MultiheadAttention(dim, heads, batch_first=True)
+        self.norm2 = nn.LayerNorm(dim)
+        self.mlp = MLP(dim, dim * 4)
+    def forward(self, x):
+        x = x + self.attn(self.norm1(x), self.norm1(x), self.norm1(x))[0]
+        x = x + self.mlp(self.norm2(x))
+        return x
+
+class SmallViT(nn.Module):
+    """~4M param ViT for CIFAR-10. Mostly Linear layers (good for Dion)."""
+    def __init__(self, dim=256, depth=6, heads=8, num_classes=10):
+        super().__init__()
+        self.patch_embed = PatchEmbed(embed_dim=dim)
+        self.cls_token = nn.Parameter(torch.randn(1, 1, dim) * 0.02)
+        self.pos_embed = nn.Parameter(torch.randn(1, self.patch_embed.n_patches + 1, dim) * 0.02)
+        self.blocks = nn.Sequential(*[Block(dim, heads) for _ in range(depth)])
+        self.norm = nn.LayerNorm(dim)
+        self.head = nn.Linear(dim, num_classes)
+    def forward(self, x):
+        x = self.patch_embed(x)
+        x = torch.cat([self.cls_token.expand(x.size(0), -1, -1), x], dim=1)
+        x = x + self.pos_embed
+        x = self.blocks(x)
+        return self.head(self.norm(x[:, 0]))
+
 def build_model(device):
-    model = models.resnet18(num_classes=10)
-    model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-    model.maxpool = nn.Identity()
-    return model.to(device)
+    return SmallViT(dim=256, depth=6, heads=8).to(device)
 
 # ---------------------------------------------------------------------------
 # Optimizer
 # ---------------------------------------------------------------------------
 def _split_params(model):
-    """Split into matrix (2D) and scalar (1D/bias) params."""
+    """Split into matrix (exactly 2D) and scalar (everything else) params.
+    Conv weights (4D) go to scalar group — Dion only handles 2D."""
     mat, scalar = [], []
     for p in model.parameters():
-        (mat if p.ndim >= 2 and min(p.shape) >= 2 else scalar).append(p)
+        (mat if p.ndim == 2 and min(p.shape) >= 2 else scalar).append(p)
     return mat, scalar
 
 def create_optimizer(name, model, lr, wd, rank_fraction=0.5, adaptive=False):
