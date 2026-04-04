@@ -1,6 +1,1 @@
-"""ada-dion optimizer re-exports from the official microsoft/dion package."""
-
-from dion import Muon, Dion, Dion2
-from .adadion import AdaDion
-
-__all__ = ["Muon", "Dion", "Dion2", "AdaDion"]
+"""AdaDion V2 optimizer experiment for TorchTitan — adaptive rank on top of Microsoft Dion."""
