@@ -57,7 +57,10 @@ plt.rcParams.update({
 
 COLORS = {
     "adamw": "#4C72B0",
-    "dion_equiv": "#DD8452",
+    "muon": "#C44E52",
+    "dion": "#DD8452",
+    "dion2": "#8172B3",
+    "dion_equiv": "#937860",
     "adadion_v2": "#55A868",
 }
 
@@ -112,15 +115,37 @@ def build_model(device):
 # ---------------------------------------------------------------------------
 # Optimizer
 # ---------------------------------------------------------------------------
+def _split_params(model):
+    """Split into matrix (2D) and scalar (1D/bias) params."""
+    mat, scalar = [], []
+    for p in model.parameters():
+        (mat if p.ndim >= 2 and min(p.shape) >= 2 else scalar).append(p)
+    return mat, scalar
+
 def create_optimizer(name, model, lr, wd, rank_fraction=0.5, adaptive=False):
     if name == "adamw":
         return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
 
-    from ada_dion.optim.adadion_v2 import AdaDionV2
-    mat, scalar = [], []
-    for p in model.parameters():
-        (mat if p.ndim >= 2 and min(p.shape) >= 2 else scalar).append(p)
+    mat, scalar = _split_params(model)
 
+    if name in ("muon", "dion", "dion2"):
+        from dion import Muon, Dion, Dion2
+        scalar_group = {
+            "params": scalar, "algorithm": "adamw",
+            "lr": lr * 0.1, "weight_decay": wd,
+            "betas": (0.9, 0.95), "eps": 1e-8,
+        }
+        groups = [{"params": mat}, scalar_group] if scalar else [{"params": mat}]
+
+        if name == "muon":
+            return Muon(groups, lr=lr, mu=0.95, weight_decay=wd)
+        elif name == "dion":
+            return Dion(groups, lr=lr, rank_fraction=rank_fraction, weight_decay=wd)
+        elif name == "dion2":
+            return Dion2(groups, lr=lr, fraction=rank_fraction, ef_decay=0.95, weight_decay=wd)
+
+    # adadion_v2 or dion_equiv
+    from ada_dion.optim.adadion_v2 import AdaDionV2
     groups = [{"params": mat}]
     if scalar:
         groups.append({"params": scalar, "algorithm": "adamw",
@@ -432,7 +457,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--log-freq", type=int, default=20)
     parser.add_argument("--outdir", type=str, default="benchmarks/cifar10_results")
-    parser.add_argument("--optimizers", type=str, default="adamw,dion_equiv,adadion_v2")
+    parser.add_argument("--optimizers", type=str, default="adamw,muon,dion,dion2,dion_equiv,adadion_v2")
     parser.add_argument("--wandb", action="store_true")
     parser.add_argument("--wandb-project", type=str, default="cifar10-adadion-v2")
     args = parser.parse_args()
@@ -456,11 +481,14 @@ def main():
     opt_names = [o.strip() for o in args.optimizers.split(",")]
     all_logs = {}
 
+    LR_MAP = {"adamw": args.lr, "muon": 0.02, "dion": 0.02, "dion2": 0.02,
+              "dion_equiv": 0.02, "adadion_v2": 0.02}
+
     for opt_name in opt_names:
         cfg = {
             "name": opt_name, "optimizer": opt_name,
             "epochs": args.epochs, "batch_size": args.batch_size,
-            "lr": args.lr if opt_name == "adamw" else 0.02,
+            "lr": LR_MAP.get(opt_name, 0.02),
             "weight_decay": args.wd, "seed": args.seed,
             "log_freq": args.log_freq, "rank_fraction": 0.5,
             "adaptive_rank": (opt_name == "adadion_v2"),
