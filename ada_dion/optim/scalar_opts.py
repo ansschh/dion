@@ -3,7 +3,7 @@ from torch import Tensor
 from typing import Generator, List
 
 
-@torch.compile(fullgraph=True)
+@torch.compile(fullgraph=False)
 def adamw_update(
     X: Tensor,  # Model weights (modified in place)
     G: Tensor,  # Gradient
@@ -64,7 +64,7 @@ def adamw_update(
     X.addcdiv_(M, denom, value=-adj_lr)
 
 
-@torch.compile(fullgraph=True)
+@torch.compile(fullgraph=False)
 def lion_update(
     X: Tensor,  # Model weights (modified in place)
     G: Tensor,  # Gradient
@@ -107,7 +107,7 @@ def lion_update(
     X.add_(U, alpha=-lr)
 
 
-@torch.compile(fullgraph=True)
+@torch.compile(fullgraph=False)
 def adamw_update_foreach(
     X: List[Tensor],  # Model weights (modified in place)
     G: List[Tensor],  # Gradient
@@ -186,7 +186,7 @@ def adamw_update_foreach(
     torch._foreach_sub_(X, M_div)
 
 
-@torch.compile(fullgraph=True)
+@torch.compile(fullgraph=False)
 def lion_update_foreach(
     X: List[Tensor],  # Model weights (modified in place)
     G: List[Tensor],  # Gradient

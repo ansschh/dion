@@ -1781,7 +1781,7 @@ def distributed_orthogonalize(
 
 
 
-@torch.compile(fullgraph=True)
+@torch.compile(fullgraph=False)
 def fix_all_zero_or_nan(
     P: Tensor,  # Output of power iteration
     R: Tensor,  # Output of power iteration
@@ -1812,7 +1812,7 @@ def fix_all_zero_or_nan(
     return P, R
 
 
-@torch.compile(fullgraph=True)
+@torch.compile(fullgraph=False)
 def local_column_sum_sq(X: Tensor) -> Tensor:
     """
     Compute the per-column sum of squares of a tensor, or local shard of a DTensor.
@@ -1825,7 +1825,7 @@ def local_column_sum_sq(X: Tensor) -> Tensor:
     return X
 
 
-@torch.compile(fullgraph=True)
+@torch.compile(fullgraph=False)
 def column_normalize(
     X: Tensor,
     full_column_sum_sq: Optional[Tensor] = None,
@@ -1859,7 +1859,7 @@ def column_normalize(
     return X
 
 
-@torch.compile(fullgraph=True)
+@torch.compile(fullgraph=False)
 def foreach_baddbmm_(
     X: List[Tensor],  # List of 2D matrices (modified in place)
     A: Tensor,  # 3D batch of matrices
@@ -1898,7 +1898,7 @@ def foreach_baddbmm_(
     torch._foreach_add_(X, update)
 
 
-@torch.compile(fullgraph=True)
+@torch.compile(fullgraph=False)
 def update_Q_matrix_(
     Q: List[Tensor],  # Q matrix for power iteration (modified in place)
     Q_batch: Tensor,  # New Q matrix from orthogonalization
