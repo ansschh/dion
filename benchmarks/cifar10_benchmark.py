@@ -165,7 +165,9 @@ def _split_params(model):
         (mat if p.ndim == 2 and min(p.shape) >= 2 else scalar).append(p)
     return mat, scalar
 
-def create_optimizer(name, model, lr, wd, rank_fraction=0.5, adaptive=False):
+def create_optimizer(name, model, lr, wd, rank_fraction=0.5, adaptive=False,
+                     ada_kwargs=None):
+    """Create optimizer. ada_kwargs overrides AdaDionV2 adaptive rank params."""
     if name == "adamw":
         return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
 
@@ -195,12 +197,27 @@ def create_optimizer(name, model, lr, wd, rank_fraction=0.5, adaptive=False):
                         "lr": lr * 0.1, "weight_decay": wd,
                         "betas": (0.9, 0.95), "eps": 1e-8})
 
+    # Defaults for adaptive rank hyperparams
+    ada_defaults = dict(
+        erank_ema_beta=0.5, rank_scale=1.5, rank_min=8,
+        rank_quantize=4, rank_step_up=8, rank_step_down=4,
+        adapt_step=1,
+    )
+    if ada_kwargs:
+        ada_defaults.update(ada_kwargs)
+
     return AdaDionV2(
         groups, lr=lr, mu=0.95, rank_fraction_max=0.7 if adaptive else rank_fraction,
         weight_decay=wd, adaptive_rank=adaptive,
-        init_rank_fraction=rank_fraction, erank_ema_beta=0.5,
-        rank_scale=1.5, rank_min=8, rank_quantize=4,
-        rank_step_up=8, rank_step_down=4, use_quality_control=adaptive,
+        init_rank_fraction=rank_fraction,
+        erank_ema_beta=ada_defaults["erank_ema_beta"],
+        rank_scale=ada_defaults["rank_scale"],
+        rank_min=ada_defaults["rank_min"],
+        rank_quantize=ada_defaults["rank_quantize"],
+        rank_step_up=ada_defaults["rank_step_up"],
+        rank_step_down=ada_defaults["rank_step_down"],
+        adapt_step=ada_defaults["adapt_step"],
+        use_quality_control=adaptive,
     )
 
 # ---------------------------------------------------------------------------
@@ -234,7 +251,8 @@ def run_one(cfg, rank, local_rank, world_size, wandb_run=None):
         model = nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
 
     opt = create_optimizer(cfg["optimizer"], model, cfg["lr"], cfg["weight_decay"],
-                           cfg.get("rank_fraction", 0.5), cfg.get("adaptive_rank", False))
+                           cfg.get("rank_fraction", 0.5), cfg.get("adaptive_rank", False),
+                           ada_kwargs=cfg.get("ada_kwargs", None))
 
     total_steps = cfg["epochs"] * len(train_dl)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=total_steps)
@@ -288,11 +306,16 @@ def run_one(cfg, rank, local_rank, world_size, wandb_run=None):
                         row["rank_mean"] = sum(vals) / len(vals)
                         row["rank_min"] = min(vals)
                         row["rank_max"] = max(vals)
+                        # Per-layer rank by shape group
+                        for k, v in ranks.items():
+                            row[f"rank/{k}"] = v
                 if hasattr(opt, "get_effective_rank"):
                     eranks = opt.get_effective_rank()
                     if eranks:
                         vals = list(eranks.values())
                         row["erank_mean"] = sum(vals) / len(vals)
+                        for k, v in eranks.items():
+                            row[f"erank/{k}"] = v
                 if hasattr(opt, "get_aerr"):
                     aerrs = opt.get_aerr()
                     if aerrs:
@@ -525,16 +548,45 @@ def main():
     all_logs = {}
 
     LR_MAP = {"adamw": args.lr, "muon": 0.02, "dion": 0.02, "dion2": 0.02,
-              "dion_equiv": 0.02, "adadion_v2": 0.02}
+              "dion_equiv": 0.02, "adadion_v2": 0.02,
+              # ablation variants
+              "ada_frozen": 0.02,         # E1: adaptive path but rank frozen
+              "ada_beta99": 0.02,         # E3: erank_ema_beta=0.99
+              "ada_beta95": 0.02,         # E3: erank_ema_beta=0.95
+              "ada_conservative": 0.02,   # E7: conservative preset
+              "ada_rmin32": 0.02,         # E5: rank_min=32
+              "ada_scale2": 0.02,         # E4: rank_scale=2.0
+              }
+
+    # Ablation experiment configs: maps name → (optimizer_name, adaptive, ada_kwargs)
+    ABLATION_MAP = {
+        "ada_frozen":       ("dion_equiv", True,  {"adapt_step": 999999}),
+        "ada_beta99":       ("dion_equiv", True,  {"erank_ema_beta": 0.99}),
+        "ada_beta95":       ("dion_equiv", True,  {"erank_ema_beta": 0.95}),
+        "ada_conservative": ("dion_equiv", True,  {"erank_ema_beta": 0.99, "rank_scale": 2.5,
+                                                    "rank_min": 32, "rank_step_down": 1,
+                                                    "rank_step_up": 2}),
+        "ada_rmin32":       ("dion_equiv", True,  {"rank_min": 32}),
+        "ada_scale2":       ("dion_equiv", True,  {"rank_scale": 2.0}),
+    }
 
     for opt_name in opt_names:
+        ablation = ABLATION_MAP.get(opt_name)
+        if ablation:
+            base_opt, adaptive, ada_kw = ablation
+        else:
+            base_opt = opt_name
+            adaptive = (opt_name == "adadion_v2")
+            ada_kw = None
+
         cfg = {
-            "name": opt_name, "optimizer": opt_name,
+            "name": opt_name, "optimizer": base_opt,
             "epochs": args.epochs, "batch_size": args.batch_size,
             "lr": LR_MAP.get(opt_name, 0.02),
             "weight_decay": args.wd, "seed": args.seed,
             "log_freq": args.log_freq, "rank_fraction": 0.5,
-            "adaptive_rank": (opt_name == "adadion_v2"),
+            "adaptive_rank": adaptive,
+            "ada_kwargs": ada_kw,
         }
 
         if is_main:

@@ -813,7 +813,8 @@ class AdaDionV2(Optimizer):
                     continue
                 state = self.state[p]
                 if "r" in state:
-                    result[f"param_{idx}"] = state["r"]
+                    m, n = p.shape
+                    result[f"p{idx}_{m}x{n}"] = state["r"]
                 idx += 1
         return result
 
@@ -830,7 +831,8 @@ class AdaDionV2(Optimizer):
                     continue
                 state = self.state[p]
                 if state.get("erank_ema") is not None:
-                    result[f"param_{idx}"] = state["erank_ema"]
+                    m, n = p.shape
+                    result[f"p{idx}_{m}x{n}"] = state["erank_ema"]
                 idx += 1
         return result
 
