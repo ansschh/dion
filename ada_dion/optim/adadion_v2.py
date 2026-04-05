@@ -1469,6 +1469,8 @@ def _adaptive_rank_update(
     R_local = to_local(R_batch)
     num_real = len(ada_states)  # batch may be padded
 
+    adapt_step = ada_config.get("adapt_step", 1)
+
     for i in range(num_real):
         state = ada_states[i]
         r = state["r"]
@@ -1489,6 +1491,12 @@ def _adaptive_rank_update(
                 erank_ema_beta * state["erank_ema"]
                 + (1.0 - erank_ema_beta) * erank
             )
+
+        state["ada_step"] += 1
+
+        # Only update rank every adapt_step steps
+        if state["ada_step"] % adapt_step != 0:
+            continue
 
         # Desired rank
         desired = int(round(rank_scale * state["erank_ema"]))
