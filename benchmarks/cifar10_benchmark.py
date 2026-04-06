@@ -556,35 +556,40 @@ def main():
               "ada_conservative": 0.02,   # E7: conservative preset
               "ada_rmin32": 0.02,         # E5: rank_min=32
               "ada_scale2": 0.02,         # E4: rank_scale=2.0
+              "dion_r07": 0.02,           # fixed rank at 0.7
+              "dion_r03": 0.02,           # fixed rank at 0.3
               }
 
-    # Ablation experiment configs: maps name → (optimizer_name, adaptive, ada_kwargs)
+    # Ablation experiment configs: maps name → (optimizer_name, adaptive, ada_kwargs, rank_fraction)
     ABLATION_MAP = {
-        "ada_frozen":       ("dion_equiv", True,  {"adapt_step": 999999}),
-        "ada_beta99":       ("dion_equiv", True,  {"erank_ema_beta": 0.99}),
-        "ada_beta95":       ("dion_equiv", True,  {"erank_ema_beta": 0.95}),
+        "ada_frozen":       ("dion_equiv", True,  {"adapt_step": 999999}, 0.5),
+        "ada_beta99":       ("dion_equiv", True,  {"erank_ema_beta": 0.99}, 0.5),
+        "ada_beta95":       ("dion_equiv", True,  {"erank_ema_beta": 0.95}, 0.5),
         "ada_conservative": ("dion_equiv", True,  {"erank_ema_beta": 0.99, "rank_scale": 2.5,
                                                     "rank_min": 32, "rank_step_down": 1,
-                                                    "rank_step_up": 2}),
-        "ada_rmin32":       ("dion_equiv", True,  {"rank_min": 32}),
-        "ada_scale2":       ("dion_equiv", True,  {"rank_scale": 2.0}),
+                                                    "rank_step_up": 2}, 0.5),
+        "ada_rmin32":       ("dion_equiv", True,  {"rank_min": 32}, 0.5),
+        "ada_scale2":       ("dion_equiv", True,  {"rank_scale": 2.0}, 0.5),
+        "dion_r07":         ("dion_equiv", False, None, 0.7),
+        "dion_r03":         ("dion_equiv", False, None, 0.3),
     }
 
     for opt_name in opt_names:
         ablation = ABLATION_MAP.get(opt_name)
         if ablation:
-            base_opt, adaptive, ada_kw = ablation
+            base_opt, adaptive, ada_kw, rf = ablation
         else:
             base_opt = opt_name
             adaptive = (opt_name == "adadion_v2")
             ada_kw = None
+            rf = 0.5
 
         cfg = {
             "name": opt_name, "optimizer": base_opt,
             "epochs": args.epochs, "batch_size": args.batch_size,
             "lr": LR_MAP.get(opt_name, 0.02),
             "weight_decay": args.wd, "seed": args.seed,
-            "log_freq": args.log_freq, "rank_fraction": 0.5,
+            "log_freq": args.log_freq, "rank_fraction": rf,
             "adaptive_rank": adaptive,
             "ada_kwargs": ada_kw,
         }
